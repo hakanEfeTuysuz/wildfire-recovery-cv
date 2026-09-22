@@ -1,0 +1,7 @@
+earthengine-api
+numpy
+rasterio
+matplotlib
+plotly
+scikit-image
+torch
