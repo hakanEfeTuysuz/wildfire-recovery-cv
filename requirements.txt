@@ -1,4 +1,7 @@
-earthengine-api
+pystac-client
+planetary-computer
+rasterio
+rioxarray
 numpy
 rasterio
 matplotlib
