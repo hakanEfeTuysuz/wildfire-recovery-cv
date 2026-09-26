@@ -2,7 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import pearsonr
-from common import get_sentinel2_items, compute_nbr_and_mask, get_forest_mask, find_best_august_date
+from common import get_sentinel2_items, compute_nbr_and_mask, get_forest_mask, find_best_august_date, get_terrain_features
 
 print("--- Yangın öncesi (baseline / arazi kalitesi vekili) ---")
 pre_items = get_sentinel2_items("2021-07-20")
@@ -72,3 +72,29 @@ for idx in burned_indices:
         continue
     r2, p2 = pearsonr(x, y)
     print(f"  {severity_labels[idx]:25s}: r={r2:.3f}  p={p2:.4f}")
+
+elevation, slope_deg, ns_gradient = get_terrain_features(target_grid=nbr_pre)
+
+print(f"\nYükseklik aralığı (temizlik öncesi): {np.nanmin(elevation):.1f} - {np.nanmax(elevation):.1f} m")
+print(f"Eğim aralığı (temizlik öncesi): {np.nanmin(slope_deg):.1f} - {np.nanmax(slope_deg):.1f} derece")
+
+# Karo birleşim hatlarındaki (tile seam) anlamsız/aşırı değerleri ele
+terrain_valid = (
+    np.isfinite(elevation) & (elevation > -50) & (elevation < 3000)
+    & np.isfinite(slope_deg) & (slope_deg < 80)
+    & np.isfinite(ns_gradient)
+)
+final_valid = overall_valid & terrain_valid
+print(f"Terrain temizliği sonrası geçerli piksel: {final_valid.sum()} / {overall_valid.sum()}")
+
+np.savez(
+    "outputs/recovery_dataset.npz",
+    baseline_vigor=baseline_vigor[final_valid],
+    dnbr_value=dnbr_2021.values[final_valid],
+    severity_class=severity_class[final_valid],
+    nbr_2026=nbr_2026.values[final_valid],
+    elevation=elevation[final_valid],
+    slope_deg=slope_deg[final_valid],
+    ns_gradient=ns_gradient[final_valid],
+)
+print("Kaydedildi: outputs/recovery_dataset.npz (model için)")

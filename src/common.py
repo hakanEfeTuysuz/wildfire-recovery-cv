@@ -8,6 +8,8 @@ from pyproj import Transformer
 import pystac_client
 import planetary_computer
 from collections import defaultdict  # dosyanın en üstündeki import'lara ekle
+import numpy as np
+from rasterio.enums import Resampling
 
 CATALOG_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 BBOX_4326 = [30.95, 36.65, 31.75, 37.20]
@@ -98,3 +100,28 @@ def find_best_august_date(year, cloud_thresh=20):
         by_date[it.datetime.date()].append(it)
     best_date = min(by_date, key=lambda d: min(i.properties["eo:cloud_cover"] for i in by_date[d]))
     return best_date, by_date[best_date]
+
+
+def get_terrain_features(target_grid, bbox=BBOX_4326):
+    print("--- Copernicus DEM (yükseklik/eğim/bakı) ---")
+    search = get_catalog().search(collections=["cop-dem-glo-30"], bbox=bbox)
+    items = list(search.items())
+    print(f"  {len(items)} DEM karosu bulundu")
+    arrays = []
+    for it in items:
+        print(f"  data okunuyor: {it.id}, asset anahtarları: {list(it.assets.keys())}")
+        da = rioxarray.open_rasterio(it.assets["data"].href, masked=True).squeeze()
+        da = clip_to_bbox(da, bbox)
+        arrays.append(da)
+    dem = arrays[0] if len(arrays) == 1 else merge_arrays(arrays)
+    dem = dem.rio.reproject_match(target_grid, resampling=Resampling.bilinear)
+
+    elevation = dem.values.astype("float32")
+    pixel_size = abs(target_grid.rio.resolution()[0])
+    # satır ekseni (0) kuzeyden güneye gider (north-up raster varsayımı),
+    # kuzey yönü eğimi için işareti ters çeviriyoruz
+    dz_dy = -np.gradient(elevation, axis=0) / pixel_size  # + değer = kuzeye doğru yükseliyor
+    dz_dx = np.gradient(elevation, axis=1) / pixel_size
+    slope_deg = np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2)))
+
+    return elevation, slope_deg, dz_dy

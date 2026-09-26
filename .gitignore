@@ -4,3 +4,4 @@ __pycache__/
 data/raw/
 .env
 *.tif
+outputs/recovery_dataset.npz
