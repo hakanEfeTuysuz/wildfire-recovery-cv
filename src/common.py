@@ -7,6 +7,7 @@ from rioxarray.merge import merge_arrays
 from pyproj import Transformer
 import pystac_client
 import planetary_computer
+from collections import defaultdict  # dosyanın en üstündeki import'lara ekle
 
 CATALOG_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 BBOX_4326 = [30.95, 36.65, 31.75, 37.20]
@@ -81,3 +82,19 @@ def get_forest_mask(target_grid, bbox=BBOX_4326):
     worldcover = arrays[0] if len(arrays) == 1 else merge_arrays(arrays)
     worldcover = worldcover.rio.reproject_match(target_grid)
     return worldcover.isin(FOREST_CLASSES)
+
+def find_best_august_date(year, cloud_thresh=20):
+    search = get_catalog().search(
+        collections=["sentinel-2-l2a"],
+        bbox=BBOX_4326,
+        datetime=f"{year}-08-01/{year}-08-31",
+        query={"eo:cloud_cover": {"lt": cloud_thresh}},
+    )
+    items = list(search.items())
+    if not items:
+        return None, []
+    by_date = defaultdict(list)
+    for it in items:
+        by_date[it.datetime.date()].append(it)
+    best_date = min(by_date, key=lambda d: min(i.properties["eo:cloud_cover"] for i in by_date[d]))
+    return best_date, by_date[best_date]

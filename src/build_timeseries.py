@@ -2,24 +2,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from collections import defaultdict
-from common import BBOX_4326, get_catalog, get_sentinel2_items, compute_nbr_and_mask, get_forest_mask
+from common import BBOX_4326, get_catalog, get_sentinel2_items, compute_nbr_and_mask, get_forest_mask, find_best_august_date
 
-
-def find_best_august_date(year, cloud_thresh=20):
-    search = get_catalog().search(
-        collections=["sentinel-2-l2a"],
-        bbox=BBOX_4326,
-        datetime=f"{year}-08-01/{year}-08-31",
-        query={"eo:cloud_cover": {"lt": cloud_thresh}},
-    )
-    items = list(search.items())
-    if not items:
-        return None, []
-    by_date = defaultdict(list)
-    for it in items:
-        by_date[it.datetime.date()].append(it)
-    best_date = min(by_date, key=lambda d: min(i.properties["eo:cloud_cover"] for i in by_date[d]))
-    return best_date, by_date[best_date]
 
 
 print("=== Referans: yangın öncesi (2021-07-20) ===")
