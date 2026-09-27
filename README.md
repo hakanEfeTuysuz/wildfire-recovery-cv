@@ -3,54 +3,75 @@
 
 ---
 
-## 🇹🇷 Türkçe
-
-### Amaç
+## 🇹🇷 Amaç
 
 Bu proje, uydu görüntüleri kullanılarak orman yangınlarının etkilediği alanların tespit edilmesini ve bu alanlardaki bitki örtüsünün zaman içinde nasıl (ve ne kadar) toparlandığının izlenmesini amaçlamaktadır. Temel motivasyon, büyük ölçekli doğal afetlerin etkisini elle/sahada değerlendirmenin pratik olmadığı durumlarda, uzaktan algılama verisiyle otomatik ve tekrarlanabilir bir analiz süreci kurmaktır.
 
-### Hangi Problemi Çözüyor?
+## 🇬🇧 Purpose
 
-- **Afet sonrası hasar değerlendirmesi:** Bir yangının hangi alanları, ne şiddette etkilediğinin hızlı ve nesnel biçimde belirlenmesi.
-- **Zaman içinde izleme:** Etkilenen alanların doğal olarak toparlanıp toparlanmadığının, toparlanıyorsa ne hızda olduğunun takip edilmesi.
-- **Kaynak planlama desteği:** Restorasyon/ağaçlandırma çalışmalarının nereye öncelik verilmesi gerektiğine dair veriye dayalı bir bakış sunulması.
-- **Doğrulanabilirlik:** Sonuçların, resmi kurumların açıkladığı verilerle karşılaştırılarak güvenilirliğinin sınanması.
-
-### Nerede Kullanılabilir?
-
-Bu yaklaşım yalnızca orman yangınlarıyla sınırlı değildir; benzer mantık kuraklık, sel, ormansızlaşma veya kentsel büyüme gibi zaman içinde gözlemlenebilen başka çevresel değişim türlerine de uyarlanabilir. Uygulama alanları arasında afet yönetimi, çevre/orman politikası, akademik uzaktan algılama araştırmaları ve açık kaynaklı veri bilimi çalışmaları sayılabilir.
-
-### Yaklaşım (Genel Hatlarıyla)
-
-Bitki örtüsünün sağlığını ve yanıklık durumunu ölçen, literatürde kabul görmüş standart uzaktan algılama indeksleri kullanılarak, bir bölgenin olay öncesi ve sonrası uydu görüntüleri karşılaştırılır. Elde edilen sonuçlar, mümkün olduğunda resmi/bağımsız verilerle doğrulanmaya çalışılır.
-
-### Durum
-
-Bu proje şu an değerlendirme ve geliştirme aşamasındadır; nihai kapsamı, kullanım alanı ve ileride akademik bir çalışmaya dönüşüp dönüşmeyeceği henüz kesinleşmemiştir.
+This project detects wildfire-affected areas from satellite imagery and tracks how (and how much) vegetation in those areas recovers over time — building an automated, repeatable alternative to manual, on-the-ground damage assessment.
 
 ---
 
-## 🇬🇧 English
+## Case Study
 
-### Purpose
+**2021 Manavgat / Gündoğmuş wildfires** (Antalya, Türkiye).
 
-This project aims to detect areas affected by wildfires using satellite imagery, and to track how (and how much) vegetation in those areas recovers over time. The core motivation is to build an automated, repeatable analysis process using remote sensing data, in situations where manually assessing the impact of large-scale natural disasters on the ground is impractical.
+## Data Sources
 
-### Problem It Addresses
+| Source | Purpose | Access |
+|---|---|---|
+| [Sentinel-2 L2A](https://sentinel.esa.int/web/sentinel/missions/sentinel-2) | Multispectral satellite imagery | [Microsoft Planetary Computer](https://planetarycomputer.microsoft.com/) STAC API — free, no billing account required |
+| [ESA WorldCover 10m](https://esa-worldcover.org/en) | Forest/shrubland masking | Planetary Computer STAC API |
+| [Copernicus DEM GLO-30](https://planetarycomputer.microsoft.com/dataset/cop-dem-glo-30) | Elevation, slope, aspect | Planetary Computer STAC API |
 
-- **Post-disaster damage assessment:** Quickly and objectively determining which areas were affected by a fire, and to what severity.
-- **Monitoring over time:** Tracking whether affected areas are naturally recovering, and if so, at what rate.
-- **Resource planning support:** Providing a data-driven view of where restoration/reforestation efforts should be prioritized.
-- **Verifiability:** Testing the reliability of results by comparing them against figures published by official institutions.
+## Method
 
-### Where It Can Be Applied
+1. **dNBR** (differenced Normalized Burn Ratio) — standard remote-sensing burn severity index.
+2. **Cloud/water/land-cover masking** (Sentinel-2 SCL + ESA WorldCover) to keep only forest/shrubland pixels.
+3. **USGS burn severity classification**, validated against officially reported burned-area statistics.
+4. **Multi-year NBR time series** (2021–2026) to track vegetation recovery.
+5. **Terrain-aware predictive model** (Linear Regression / Random Forest) estimating long-term recovery from pre-fire vegetation vigor, burn severity, and terrain (elevation, slope, aspect).
 
-This approach is not limited to wildfires; the same underlying logic can be adapted to other environmental changes observable over time, such as drought, floods, deforestation, or urban growth. Relevant application areas include disaster management, environmental/forestry policy, academic remote sensing research, and open-source data science work.
+## Results
 
-### Approach (High-Level)
+- Estimated burned forest area ≈ 40,656 ha — about **72%** of the officially reported figure (56,663 ha) for Manavgat.
+- Long-term recovery is driven mainly by **pre-fire vegetation vigor** (site quality), largely independent of burn severity.
+- Predictive model: Linear Regression R² = 0.33, Random Forest R² = 0.41.
 
-Pre-event and post-event satellite imagery of a region are compared using standard, literature-established remote sensing indices that measure vegetation health and burn severity. Where possible, results are cross-checked against official or independent data sources.
+![dNBR map](outputs/dnbr_preview.png)
+![Severity classification](outputs/severity_classified.png)
+![Recovery time series](outputs/recovery_timeseries.png)
+![Recovery drivers](outputs/recovery_vs_baseline_vigor.png)
 
-### Status
+## Setup
 
-This project is currently in an evaluation and development phase; its final scope, intended use, and whether it will develop into an academic study are not yet finalized.
+```bash
+git clone <repo-url>
+cd wildfire-recovery-cv
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Usage
+
+```bash
+python src/compute_dnbr.py
+python src/classify_severity.py
+python src/build_timeseries.py
+python src/analyze_recovery_drivers.py
+python src/model_recovery.py
+```
+
+## Status
+
+Actively under development.
+
+## Data Attribution
+
+Contains modified Copernicus Sentinel data (via Microsoft Planetary Computer). ESA WorldCover © ESA WorldCover project ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)). Copernicus DEM © DLR/Airbus.
+
+## License
+
+MIT
