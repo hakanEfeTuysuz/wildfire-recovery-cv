@@ -33,8 +33,8 @@ nbr_2026 = nbr_2026.rio.reproject_match(nbr_pre)
 mask_2026 = mask_2026.astype("uint8").rio.reproject_match(nbr_pre) > 0
 valid_2026 = (mask_2026 & forest_mask).values
 
-recovery_amount = (nbr_2026 - nbr_post).values  # 2026'ya kadar ne kadar toparlandı
-baseline_vigor = nbr_pre.values                  # yangın öncesi NBR = arazi kalitesi vekili
+recovery_amount = (nbr_2026 - nbr_post).values
+baseline_vigor = nbr_pre.values
 
 overall_valid = valid_2021 & valid_2026 & np.isin(severity_class, burned_indices)
 
@@ -78,14 +78,16 @@ elevation, slope_deg, ns_gradient = get_terrain_features(target_grid=nbr_pre)
 print(f"\nYükseklik aralığı (temizlik öncesi): {np.nanmin(elevation):.1f} - {np.nanmax(elevation):.1f} m")
 print(f"Eğim aralığı (temizlik öncesi): {np.nanmin(slope_deg):.1f} - {np.nanmax(slope_deg):.1f} derece")
 
-# Karo birleşim hatlarındaki (tile seam) anlamsız/aşırı değerleri ele
 terrain_valid = (
     np.isfinite(elevation) & (elevation > -50) & (elevation < 3000)
     & np.isfinite(slope_deg) & (slope_deg < 80)
     & np.isfinite(ns_gradient)
 )
 final_valid = overall_valid & terrain_valid
-print(f"Terrain temizliği sonrası geçerli piksel: {final_valid.sum()} / {overall_valid.sum()}")
+print(f"Terrain temizliği sonrası geçerli piksel: {int(final_valid.sum())} / {int(overall_valid.sum())}")
+
+# Mekansal blok ayrımı için piksel koordinatları (UTM, metre cinsinden)
+xx, yy = np.meshgrid(nbr_pre.x.values, nbr_pre.y.values)
 
 np.savez(
     "outputs/recovery_dataset.npz",
@@ -96,5 +98,7 @@ np.savez(
     elevation=elevation[final_valid],
     slope_deg=slope_deg[final_valid],
     ns_gradient=ns_gradient[final_valid],
+    x_coord=xx[final_valid],
+    y_coord=yy[final_valid],
 )
-print("Kaydedildi: outputs/recovery_dataset.npz (model için)")
+print("Kaydedildi: outputs/recovery_dataset.npz (model için, koordinatlar dahil)")
