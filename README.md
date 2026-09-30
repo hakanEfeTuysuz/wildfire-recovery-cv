@@ -30,19 +30,21 @@ This project detects wildfire-affected areas from satellite imagery and tracks h
 1. **dNBR** (differenced Normalized Burn Ratio) — standard remote-sensing burn severity index.
 2. **Cloud/water/land-cover masking** (Sentinel-2 SCL + ESA WorldCover) to keep only forest/shrubland pixels.
 3. **USGS burn severity classification**, validated against officially reported burned-area statistics.
-4. **Multi-year NBR time series** (2021–2026) to track vegetation recovery.
-5. **Terrain-aware predictive model** (Linear Regression / Random Forest) estimating long-term recovery from pre-fire vegetation vigor, burn severity, and terrain (elevation, slope, aspect).
+4. **Multi-year NBR time series** (2021–2026) to track vegetation recovery, with curve fitting to estimate recovery timelines.
+5. **Terrain-aware predictive model** (Linear Regression / Random Forest) estimating long-term recovery from pre-fire vegetation vigor, burn severity, and terrain — evaluated with a spatially-blocked train/test split to avoid inflated scores from spatial autocorrelation.
 
 ## Results
 
 - Estimated burned forest area ≈ 40,656 ha — about **72%** of the officially reported figure (56,663 ha) for Manavgat.
-- Long-term recovery is driven mainly by **pre-fire vegetation vigor** (site quality), largely independent of burn severity.
-- Predictive model: Linear Regression R² = 0.33, Random Forest R² = 0.41.
+- Long-term recovery level is driven mainly by **pre-fire vegetation vigor** (site quality), largely independent of burn severity itself; terrain (elevation, aspect) contributes secondarily.
+- Predictive model, evaluated with spatial cross-validation (to prevent leakage from neighboring pixels): **Linear Regression R² = 0.28, Random Forest R² = 0.30**.
+- Recovery-time curve fitting: moderate-high and high severity areas reach a stable plateau within ~1 year, but **below** pre-fire vegetation levels. For low and moderate-low severity classes, the current data is not yet sufficient to statistically determine a recovery timeline.
 
 ![dNBR map](outputs/dnbr_preview.png)
 ![Severity classification](outputs/severity_classified.png)
 ![Recovery time series](outputs/recovery_timeseries.png)
 ![Recovery drivers](outputs/recovery_vs_baseline_vigor.png)
+![Recovery curves](outputs/recovery_curves.png)
 
 ## Setup
 
@@ -62,6 +64,7 @@ python src/classify_severity.py
 python src/build_timeseries.py
 python src/analyze_recovery_drivers.py
 python src/model_recovery.py
+python src/estimate_recovery_time.py
 ```
 
 ## Status
