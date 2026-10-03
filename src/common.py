@@ -2,21 +2,21 @@ import os
 os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "EMPTY_DIR"
 os.environ["CPL_VSIL_CURL_ALLOWED_EXTENSIONS"] = ".tif"
 
+import time
+from collections import defaultdict
+
+import numpy as np
 import rioxarray
 from rioxarray.merge import merge_arrays
 from pyproj import Transformer
+from rasterio.enums import Resampling
 import pystac_client
 import planetary_computer
-from collections import defaultdict  # dosyanın en üstündeki import'lara ekle
-import numpy as np
-from rasterio.enums import Resampling
 
 CATALOG_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 BBOX_4326 = [30.95, 36.65, 31.75, 37.20]
 
-# SCL: 0 nodata, 1 saturated, 2 dark area, 3 cloud shadow, 6 water, 8/9/10 cloud, 11 snow
 BAD_SCL_CLASSES = [0, 1, 2, 3, 6, 8, 9, 10, 11]
-# ESA WorldCover: 10=Tree cover, 20=Shrubland (maki)
 FOREST_CLASSES = [10, 20]
 
 _catalog = None
@@ -38,22 +38,82 @@ def clip_to_bbox(da, bbox=BBOX_4326):
     return da.rio.clip_box(minx, miny, maxx, maxy)
 
 
+def deduplicate_items_by_tile(items):
+    """Aynı tarih+tile için birden fazla işlenmiş sürüm varsa (ESA'nın zaman
+    zaman yaptığı yeniden işleme kampanyaları nedeniyle), en güncel sürümü tutar."""
+    by_tile = {}
+    for it in items:
+        tile = it.properties.get("s2:mgrs_tile") or it.id.split("_")[-2]
+        existing = by_tile.get(tile)
+        if existing is None or it.id > existing.id:
+            by_tile[tile] = it
+    return list(by_tile.values())
+
+
 def get_sentinel2_items(date_str, bbox=BBOX_4326):
     search = get_catalog().search(
         collections=["sentinel-2-l2a"],
         bbox=bbox,
         datetime=f"{date_str}T00:00:00Z/{date_str}T23:59:59Z",
     )
-    return list(search.items())
+    items = list(search.items())
+    return deduplicate_items_by_tile(items)
 
 
-def read_mosaic_band(items, band, bbox=BBOX_4326):
+def get_dates_in_window(year, start_mmdd="07-15", end_mmdd="09-15", bbox=BBOX_4326, cloud_thresh=20):
+    """Verilen yıl ve pencerede, bulutluluk eşiğinin altındaki tüm benzersiz
+    tarihleri (ve o tarihe ait item'ları) döndürür."""
+    search = get_catalog().search(
+        collections=["sentinel-2-l2a"],
+        bbox=bbox,
+        datetime=f"{year}-{start_mmdd}/{year}-{end_mmdd}",
+        query={"eo:cloud_cover": {"lt": cloud_thresh}},
+    )
+    items = list(search.items())
+    by_date = defaultdict(list)
+    for it in items:
+        by_date[it.datetime.date()].append(it)
+    return sorted((d, deduplicate_items_by_tile(its)) for d, its in by_date.items())
+
+
+def find_best_august_date(year, cloud_thresh=20):
+    search = get_catalog().search(
+        collections=["sentinel-2-l2a"],
+        bbox=BBOX_4326,
+        datetime=f"{year}-08-01/{year}-08-31",
+        query={"eo:cloud_cover": {"lt": cloud_thresh}},
+    )
+    items = list(search.items())
+    if not items:
+        return None, []
+    by_date = defaultdict(list)
+    for it in items:
+        by_date[it.datetime.date()].append(it)
+    best_date = min(by_date, key=lambda d: min(i.properties["eo:cloud_cover"] for i in by_date[d]))
+    return best_date, deduplicate_items_by_tile(by_date[best_date])
+
+
+def read_mosaic_band(items, band, bbox=BBOX_4326, max_retries=3, retry_delay=3):
     arrays = []
     for it in items:
         print(f"  {band} okunuyor: {it.id}")
-        da = rioxarray.open_rasterio(it.assets[band].href, masked=True).squeeze()
-        da = clip_to_bbox(da, bbox)
-        arrays.append(da)
+        last_exc = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                href = planetary_computer.sign(it.assets[band].href)  # TAZE imza, her okumadan hemen önce
+                da = rioxarray.open_rasterio(href, masked=True).squeeze()
+                da = clip_to_bbox(da, bbox)
+                da = da.load()
+                arrays.append(da)
+                last_exc = None
+                break
+            except Exception as e:
+                last_exc = e
+                print(f"    [uyarı] okuma hatası (deneme {attempt}/{max_retries}): {type(e).__name__}")
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+        if last_exc is not None:
+            raise last_exc
     return arrays[0] if len(arrays) == 1 else merge_arrays(arrays)
 
 
@@ -75,31 +135,9 @@ def get_forest_mask(target_grid, bbox=BBOX_4326):
         collections=["esa-worldcover"], bbox=bbox, datetime="2020-01-01/2020-12-31"
     )
     items = list(search.items())
-    arrays = []
-    for it in items:
-        print(f"  map okunuyor: {it.id}")
-        da = rioxarray.open_rasterio(it.assets["map"].href).squeeze()
-        da = clip_to_bbox(da, bbox)
-        arrays.append(da)
-    worldcover = arrays[0] if len(arrays) == 1 else merge_arrays(arrays)
+    worldcover = read_mosaic_band(items, "map", bbox)
     worldcover = worldcover.rio.reproject_match(target_grid)
     return worldcover.isin(FOREST_CLASSES)
-
-def find_best_august_date(year, cloud_thresh=20):
-    search = get_catalog().search(
-        collections=["sentinel-2-l2a"],
-        bbox=BBOX_4326,
-        datetime=f"{year}-08-01/{year}-08-31",
-        query={"eo:cloud_cover": {"lt": cloud_thresh}},
-    )
-    items = list(search.items())
-    if not items:
-        return None, []
-    by_date = defaultdict(list)
-    for it in items:
-        by_date[it.datetime.date()].append(it)
-    best_date = min(by_date, key=lambda d: min(i.properties["eo:cloud_cover"] for i in by_date[d]))
-    return best_date, by_date[best_date]
 
 
 def get_terrain_features(target_grid, bbox=BBOX_4326):
@@ -107,20 +145,12 @@ def get_terrain_features(target_grid, bbox=BBOX_4326):
     search = get_catalog().search(collections=["cop-dem-glo-30"], bbox=bbox)
     items = list(search.items())
     print(f"  {len(items)} DEM karosu bulundu")
-    arrays = []
-    for it in items:
-        print(f"  data okunuyor: {it.id}, asset anahtarları: {list(it.assets.keys())}")
-        da = rioxarray.open_rasterio(it.assets["data"].href, masked=True).squeeze()
-        da = clip_to_bbox(da, bbox)
-        arrays.append(da)
-    dem = arrays[0] if len(arrays) == 1 else merge_arrays(arrays)
+    dem = read_mosaic_band(items, "data", bbox)
     dem = dem.rio.reproject_match(target_grid, resampling=Resampling.bilinear)
 
     elevation = dem.values.astype("float32")
     pixel_size = abs(target_grid.rio.resolution()[0])
-    # satır ekseni (0) kuzeyden güneye gider (north-up raster varsayımı),
-    # kuzey yönü eğimi için işareti ters çeviriyoruz
-    dz_dy = -np.gradient(elevation, axis=0) / pixel_size  # + değer = kuzeye doğru yükseliyor
+    dz_dy = -np.gradient(elevation, axis=0) / pixel_size
     dz_dx = np.gradient(elevation, axis=1) / pixel_size
     slope_deg = np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2)))
 
