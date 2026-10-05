@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
+from scipy.stats import linregress
 
 df = pd.read_csv("outputs/recovery_timeseries_dense.csv")
 df = df.dropna(subset=["ortalama_nbr"])
@@ -28,12 +29,21 @@ print(f"{'Sınıf':22s} {'n':>4s} {'Öncesi NBR':>10s} {'Tavan (A)':>10s} {'tau 
 
 for label in severity_order:
     sub = df[df["siddet_sinifi"] == label]
-    nbr_pre = float(sub[sub["t_yil"].isna()]["ortalama_nbr"].iloc[0])
-
+    nbr_pre = float(sub[sub["t_yil"].isna()]["ortalama_nbr"].iloc[0]) if sub["t_yil"].isna().any() else None
     fit_sub = sub[sub["t_yil"].notna()].sort_values("t_yil")
     t_vals = fit_sub["t_yil"].values.astype(float)
     y_vals = fit_sub["ortalama_nbr"].values.astype(float)
     nbr_t0 = y_vals[0]
+    if nbr_pre is None:
+        nbr_pre = nbr_t0
+
+    # --- Doğrusal trend testi (eğri uydurmadan bağımsız, basit bir sağlamlık kontrolü) ---
+    slope_res = linregress(t_vals, y_vals)
+    trend_sig = slope_res.pvalue < 0.05
+    if trend_sig:
+        trend_str = f"doğrusal eğim={slope_res.slope:+.4f} NBR/yıl (p={slope_res.pvalue:.4f}) — istatistiksel olarak anlamlı bir trend var"
+    else:
+        trend_str = f"doğrusal eğim={slope_res.slope:+.4f} NBR/yıl (p={slope_res.pvalue:.4f}) — ANLAMLI DEĞİL, gözlem penceresinde net bir toparlanma trendi yok"
 
     best_result = None
     for tau0 in [0.3, 0.7, 1.5, 3.0, 6.0, 10.0]:
@@ -60,7 +70,10 @@ for label in severity_order:
     )
 
     if tau_unreliable:
-        recover_str = "BELİRLENEMEDİ — veri doygunluk emaresi göstermiyor"
+        if trend_sig:
+            recover_str = "BELİRLENEMEDİ (doygunluk yok) — ancak doğrusal trend anlamlı, toparlanma sürüyor olabilir"
+        else:
+            recover_str = "BELİRLENEMEDİ — ve doğrusal trend de anlamlı değil: bu sınıf muhtemelen erken bir dengeye oturmuş, net bir toparlanma süreci gözlenmiyor"
     elif A > nbr_pre:
         t_recover = -tau * np.log((A - nbr_pre) / (A - N0))
         recover_str = f"~{t_recover:.1f} yıl (yangından itibaren)"
@@ -88,6 +101,7 @@ for label in severity_order:
         recover_str = f"tavan (A={A:.3f}) < yangın öncesi ({nbr_pre:.3f}) → toparlanma öngörülemiyor"
 
     print(f"{label:22s} {len(t_vals):4d} {nbr_pre:10.3f} {A:10.3f} {tau:10.2f}  {recover_str}")
+    print(f"  └─ {trend_str}")
 
     t_max_plot = max(t_vals) if tau_unreliable else 15
     t_plot = np.linspace(0, t_max_plot, 200)
