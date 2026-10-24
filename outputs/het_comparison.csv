@@ -1,0 +1,5 @@
+gösterge,r(yangın öncesi NBR),r(yükseklik),r(eğim),r(kuzey-güney eğim),r(dNBR (şiddet)),max |r|,koşullarla açıklanan varyans (mekansal CV R²)
+Het (koşullu sapma),-0.005,-0.005,-0.033,-0.016,0.029,0.033,-0.38
+Ham toparlanma (NBR artışı),0.093,-0.332,-0.07,-0.005,0.896,0.896,0.919
+Göreli toparlanma oranı,-0.382,-0.34,-0.123,0.046,0.443,0.443,0.751
+2026 NBR (ham düzey),0.557,-0.025,0.073,-0.178,0.29,0.557,0.301
