@@ -5,3 +5,4 @@ data/raw/
 .env
 *.tif
 outputs/recovery_dataset.npz
+outputs/nbr_cache_*.npy
