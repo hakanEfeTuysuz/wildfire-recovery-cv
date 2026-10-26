@@ -97,13 +97,13 @@ print(pd.DataFrame(vario, index=[f"{m} m" for m in lag_m]).round(3).to_string())
 
 for name in vario:
     gm = vario[name]
-    plateau = float(np.mean(gm[-3:]))
+    plateau = 1.0
     nugget = float(gm[0] / plateau)
     rng_m = next((m for m, val in zip(lag_m, gm) if val >= 0.95 * plateau), lag_m[-1])
     print(f"\n{name}: 10 m altı pay (gürültü + alt-piksel) ≈ %{100*nugget:.0f}, "
           f"mekansal yapılı pay ≈ %{100*(1-nugget):.0f}, yaklaşık menzil ≈ {rng_m} m")
 
-nug = float(vario["Het-z (genel σ)"][0] / np.mean(vario["Het-z (genel σ)"][-3:]))
+nug = float(vario["Het-z (genel σ)"][0])
 print("\n=== Varyans bütçesi (2026 NBR'sinin toplam varyansı) ===")
 print(f"  koşullarla açıklanan            %{100*r2:.0f}")
 print(f"  mekansal yapılı sapma (Het)     %{100*(1-r2)*(1-nug):.0f}")
