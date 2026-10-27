@@ -1,0 +1,14 @@
+Tüm tarihlerde geçerli piksel: 2,475,209 / 4,058,119
+beklenen NBR ve ölçek ayrıştırması: 2026-08-20
+beklenen NBR ve ölçek ayrıştırması: 2026-07-24
+beklenen NBR ve ölçek ayrıştırması: 2026-08-03
+Tüm bileşenlerde geçerli piksel: 2,240,813
+
+=== Het'in ölçek bileşenleri: pay ve tekrarlanabilirlik ===
+                        ölçek bileşeni  artık varyansındaki pay  tarihler arası r
+< 50 m (piksel gürültüsü + alt-piksel)                    0.165             0.831
+                   50 m - 1 km (yerel)                    0.470             0.939
+                   1 - 3 km (çevresel)                    0.099             0.956
+                     > 3 km (bölgesel)                    0.092             0.858
+
+(Payların toplamı 1'e yakın olmalı; bileşenler birbiriyle az da olsa ilişkili olabilir.)
