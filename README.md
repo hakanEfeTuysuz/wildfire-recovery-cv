@@ -5,7 +5,7 @@
 
 ## Amaç
 
-Bu çalışma, uydu görüntüleri kullanılarak orman yangınlarının etkilediği alanların tespit edilmesini ve bu alanlardaki bitki örtüsünün zaman içinde ne ölçüde toparlandığının izlenmesini amaçlamaktadır. Çalışma kapsamında, 2021 yılında gerçekleşen Manavgat/Gündoğmuş orman yangını bir vaka çalışması olarak ele alınmış; yangının etkilediği alan, şiddet dağılımı ve 2021-2026 yılları arasındaki toparlanma süreci sayısal olarak modellenmiştir.
+Bu çalışma, uydu görüntüleri kullanılarak orman yangınlarının etkilediği alanların tespit edilmesini ve bu alanlardaki bitki örtüsünün zaman içinde ne ölçüde toparlandığının izlenmesini amaçlamaktadır. Çalışma kapsamında, 2021 yılında gerçekleşen Manavgat/Gündoğmuş orman yangını bir vaka çalışması olarak ele alınmış; yangının etkilediği alan, şiddet dağılımı ve 2021-2026 yılları arasındaki toparlanma süreci sayısal olarak modellenmiştir. Ayrıca yangın öncesi bitki yoğunluğu, arazi ve şiddet koşullarına göre beklenen toparlanmayı kestirip gözlenen değerin bundan sapmasını ölçen **Het (Koşullu Toparlanma Sapması)** göstergesi geliştirilmiştir.
 
 ## Veri Kaynakları ve Yöntem Yaklaşımı
 
@@ -19,23 +19,25 @@ Bu çalışma, uydu görüntüleri kullanılarak orman yangınlarının etkiledi
 
 *Veri erişimi için ilk aşamada Google Earth Engine değerlendirilmiş, ücretsiz kullanım için dahi ön ödeme talep edilmesi nedeniyle Microsoft Planetary Computer'a geçilmiştir.*
 
-## Kullanılan Temel İndeks: NBR ve dNBR
+## Kullanılan Temel İndeksler: NBR, dNBR ve Het
 
 **NBR (Normalized Burn Ratio)**, yakın kızılötesi (NIR) ve kısa dalga kızılötesi (SWIR) bantları kullanılarak hesaplanan bir bitki örtüsü/yanıklık indeksidir:
 
-```
-NBR = (NIR − SWIR) / (NIR + SWIR)
-```
+    NBR = (NIR − SWIR) / (NIR + SWIR)
 
 Sağlıklı bitki örtüsü NIR bandında yüksek, SWIR bandında düşük yansıma gösterirken; yanmış veya çıplak toprak bunun tersi bir davranış sergilemektedir. Bu nedenle NBR değeri, bir alandaki bitki örtüsünün yoğunluğu/sağlığı hakkında sayısal bir gösterge sunar.
 
 **dNBR (differenced NBR)**, aynı alanın yangın öncesi ve sonrası NBR değerleri arasındaki farktır ve yanık şiddetinin belirlenmesinde kullanılır:
 
-```
-dNBR = NBR(yangın öncesi) − NBR(yangın sonrası)
-```
+    dNBR = NBR(yangın öncesi) − NBR(yangın sonrası)
 
 Bu yöntem, USGS (ABD Jeoloji Kurumu) tarafından standartlaştırılmış ve uzaktan algılama literatüründe yaygın olarak kullanılan, doğrulanmış bir tekniktir (Key & Benson, 2006).
+
+**Het (Koşullu Toparlanma Sapması)**, bir pikselin gözlenen NBR düzeyinin; kendisiyle benzer yangın öncesi yoğunluk, arazi (yükseklik, eğim, bakı) ve yanık şiddeti koşullarındaki alanlardan beklenen NBR değerinden sapmasını standartlaştırarak ölçer:
+
+    Het = (NBR(gözlenen) − NBR(beklenen)) / σ
+
+Bu yaklaşımda beklenen toparlanma düzeyi, komşu pikseller arasındaki benzerlikten kaynaklanan sızıntıyı önlemek amacıyla **tamponlu mekansal blok çapraz doğrulaması** ile kestirilir.
 
 ## Yöntem
 
@@ -45,15 +47,16 @@ Bu yöntem, USGS (ABD Jeoloji Kurumu) tarafından standartlaştırılmış ve uz
 4. 2021-2026 yılları arasında çok yıllık NBR zaman serisi oluşturulması.
 5. Toparlanma düzeyini etkileyen faktörlerin (yangın şiddeti, yangın öncesi bitki yoğunluğu, arazi özellikleri) istatistiksel olarak analiz edilmesi.
 6. Yükseklik, eğim ve bakı gibi arazi özelliklerinin modele eklenmesi.
-7. Regresyon tabanlı tahmin modelleri (Linear Regression, Random Forest) ile toparlanma düzeyinin modellenmesi; mekansal otokorelasyondan kaynaklanan değerlendirme sapmasının mekansal blok doğrulamasıyla giderilmesi.
-8. Şiddet sınıfları bazında toparlanma süresinin eğri uydurma yöntemiyle tahmin edilmesi.
+7. Regresyon ve ağaç tabanlı tahmin modelleriyle beklenen toparlanma düzeyinin modellenmesi; mekansal otokorelasyondan kaynaklanan değerlendirme sapmasının tamponlu mekansal blok doğrulamasıyla giderilmesi.
+8. Gözlenen ve beklenen toparlanma arasındaki koşullu sapmayı ölçen **Het** göstergesinin hesaplanması ve bilinen toparlanma göstergeleriyle karşılaştırılması.
+9. Şiddet sınıfları bazında toparlanma süresinin eğri uydurma yöntemiyle tahmin edilmesi.
 
 ## Araştırma Soruları
 
 - Yangının etkilediği alan ve şiddet dağılımı nedir, bu sonuç resmi verilerle ne ölçüde örtüşmektedir?
-- Toparlanma düzeyini belirleyen temel faktör yangının şiddeti midir, yoksa arazinin kendi özellikleri midir?
+- Toparlanma düzeyini belirleyen temel faktör yangının şiddeti midir, yoksa yangın öncesi bitki yoğunluğu ve arazinin kendi özellikleri midir?
+- Bu koşullar ayıklandıktan sonra kalan toparlanma sapması (**Het**) anlamlı ve kalıcı bir mekansal örüntü taşımakta mıdır?
 - Etkilenen alanların yangın öncesi duruma dönmesi ne kadar sürmektedir?
-
 ## Bulgular
 
 - Tahmini yanık orman alanı ≈ 40.656 ha olup, resmi olarak bildirilen rakamın (56.663 ha, Tarım ve Orman Bakanlığı) yaklaşık **%72**'sine karşılık gelmektedir.
