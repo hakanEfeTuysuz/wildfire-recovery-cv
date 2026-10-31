@@ -19,6 +19,28 @@ BBOX_4326 = [30.95, 36.65, 31.75, 37.20]
 BAD_SCL_CLASSES = [0, 1, 2, 3, 6, 8, 9, 10, 11]
 FOREST_CLASSES = [10, 20]
 
+# Sentinel-2 işleme sürümü (processing baseline) 04.00 ve sonrası (25 Ocak 2022'den
+# itibaren üretilen ürünler ve ESA'nın yeniden işlediği eski ürünler) yansıma
+# değerlerine +1000 DN ofset ekler (BOA_ADD_OFFSET = -1000). Bu ofset düzeltilmezse
+# NBR = (NIR - SWIR) / (NIR + SWIR) paydası yapay olarak büyür ve 2022 sonrası NBR
+# değerleri sistematik olarak sıfıra doğru sıkışır; çok yıllık karşılaştırmalar bozulur.
+BOA_ADD_OFFSET = -1000
+OFFSET_BASELINE = 4.0
+OFFSET_START_DATE = "2022-01-25"
+REFLECTANCE_BANDS = {"B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"}
+
+# Önbelleklenen ara çıktıların sürümü. Ön işleme mantığı değiştiğinde artırılır ki
+# eski (hatalı) önbellekler sessizce yeniden kullanılmasın.
+PIPELINE_VERSION = 2
+
+# USGS dNBR şiddet eşikleri (Key & Benson, 2006)
+SEVERITY_BOUNDS = [-0.25, -0.1, 0.1, 0.27, 0.44, 0.66]
+SEVERITY_LABELS = [
+    "Yüksek yeniden büyüme", "Düşük yeniden büyüme", "Yanmamış",
+    "Düşük şiddet", "Orta-düşük şiddet", "Orta-yüksek şiddet", "Yüksek şiddet",
+]
+BURNED_CLASSES = [3, 4, 5, 6]  # sadece gerçekten yanmış sınıflar
+
 _catalog = None
 
 
@@ -48,6 +70,25 @@ def deduplicate_items_by_tile(items):
         if existing is None or it.id > existing.id:
             by_tile[tile] = it
     return list(by_tile.values())
+
+
+def boa_offset(item):
+    """Item için uygulanması gereken yansıma ofsetini (DN) döndürür."""
+    baseline = item.properties.get("s2:processing_baseline")
+    if baseline is not None:
+        try:
+            return BOA_ADD_OFFSET if float(baseline) >= OFFSET_BASELINE else 0
+        except (TypeError, ValueError):
+            pass
+    # Özellik yoksa tarihe göre karar ver
+    return BOA_ADD_OFFSET if str(item.datetime.date()) >= OFFSET_START_DATE else 0
+
+
+def classify_severity(dnbr_values):
+    """dNBR dizisini USGS sınıflarına ayırır; NaN pikseller -1 olur."""
+    dnbr_values = np.asarray(dnbr_values)
+    cls = np.digitize(dnbr_values, SEVERITY_BOUNDS)
+    return np.where(np.isnan(dnbr_values), -1, cls)
 
 
 def get_sentinel2_items(date_str, bbox=BBOX_4326):
@@ -94,6 +135,7 @@ def find_best_august_date(year, cloud_thresh=20):
 
 
 def read_mosaic_band(items, band, bbox=BBOX_4326, max_retries=3, retry_delay=3):
+    is_reflectance = band in REFLECTANCE_BANDS
     arrays = []
     for it in items:
         print(f"  {band} okunuyor: {it.id}")
@@ -104,6 +146,13 @@ def read_mosaic_band(items, band, bbox=BBOX_4326, max_retries=3, retry_delay=3):
                 da = rioxarray.open_rasterio(href, masked=True).squeeze()
                 da = clip_to_bbox(da, bbox)
                 da = da.load()
+                if is_reflectance:
+                    offset = boa_offset(it)
+                    if offset:
+                        # Mozaiklemeden ÖNCE, her karoya kendi ofseti uygulanır.
+                        # copy(data=...) nodata/encoding bilgisini korur (merge için gerekli).
+                        vals = da.values.astype("float32") + offset
+                        da = da.copy(data=np.clip(vals, 0, None))
                 arrays.append(da)
                 last_exc = None
                 break
@@ -125,8 +174,23 @@ def compute_nbr_and_mask(items, bbox=BBOX_4326):
     scl = scl.rio.reproject_match(nir)
 
     nbr = (nir - swir2) / (nir + swir2 + 1e-6)
-    good_mask = ~scl.isin(BAD_SCL_CLASSES)
+    # SCL'nin nodata (0) değeri masked=True ile NaN'a döner; isin(NaN) False olduğu
+    # için bu pikseller aksi halde "iyi" sayılırdı. Kapsama dışı/NaN pikselleri dışla.
+    good_mask = ~scl.isin(BAD_SCL_CLASSES) & scl.notnull() & nbr.notnull()
     return nbr, good_mask
+
+
+def align_to_reference(nbr, good_mask, reference):
+    """NBR ve maskeyi referans ızgaraya taşır.
+
+    Boolean maske uint8 olarak yeniden örneklenirken rioxarray kapsama dışı
+    pikselleri varsayılan nodata (255) ile doldurur; bu da onları "geçerli"
+    gösterir. Burada dolgu 0 seçilir ve ayrıca NBR'nin sonlu olması şartı aranır.
+    """
+    nbr_r = nbr.rio.reproject_match(reference)
+    mask_r = good_mask.astype("uint8").rio.write_nodata(0).rio.reproject_match(reference) == 1
+    mask_r = mask_r & nbr_r.notnull()
+    return nbr_r, mask_r
 
 
 def get_forest_mask(target_grid, bbox=BBOX_4326):
@@ -154,4 +218,6 @@ def get_terrain_features(target_grid, bbox=BBOX_4326):
     dz_dx = np.gradient(elevation, axis=1) / pixel_size
     slope_deg = np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2)))
 
+    # dz_dy: kuzeye doğru yükseliş (m/m). Pozitif = arazi kuzeye doğru yükseliyor,
+    # yani yamaç GÜNEYE bakıyor; negatif = yamaç kuzeye bakıyor.
     return elevation, slope_deg, dz_dy

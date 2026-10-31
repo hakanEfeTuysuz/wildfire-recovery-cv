@@ -2,21 +2,24 @@ import numpy as np
 import pandas as pd
 from itertools import combinations
 from scipy import ndimage
+from common import PIPELINE_VERSION
 from het_core import load_dataset, condition_matrix, SpatialFolds, oof_predict
 
 CELL = 10
 DEEP_ITER = 200
 # Süzgeç pencereleri (hücre): 50 m, 1 km, 3 km
 W_FINE, W_MID, W_WIDE = 5, 101, 301
-DATES = ["2026-08-20", "2026-07-24", "2026-08-03"]
+EXTRA_DATES = ["2026-07-24", "2026-08-03"]   # het_reliability.py tarafından önbelleklenir
 
 d = load_dataset()
 x_c, y_c = d["x_coord"], d["y_coord"]
 X = condition_matrix(d)
+MAIN_DATE = str(d["nbr_2026_date"]) if "nbr_2026_date" in d else "2026-08-20"
+DATES = [MAIN_DATE] + EXTRA_DATES
 
-series = {"2026-08-20": d["nbr_2026"].astype("float64")}
-for dt in DATES[1:]:
-    series[dt] = np.load(f"outputs/nbr_cache_{dt}.npy").astype("float64")
+series = {MAIN_DATE: d["nbr_2026"].astype("float64")}
+for dt in EXTRA_DATES:
+    series[dt] = np.load(f"outputs/nbr_cache_v{PIPELINE_VERSION}_{dt}.npy").astype("float64")
 
 valid = np.ones(len(x_c), dtype=bool)
 for v in series.values():

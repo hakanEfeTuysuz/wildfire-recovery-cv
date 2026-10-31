@@ -62,8 +62,10 @@ buffer_blocks_df["is_buffer_block"] = True
 
 df = df.merge(test_blocks_df[["block_x", "block_y", "is_test_block"]], on=["block_x", "block_y"], how="left")
 df = df.merge(buffer_blocks_df[["block_x", "block_y", "is_buffer_block"]], on=["block_x", "block_y"], how="left")
-df["is_test_block"] = df["is_test_block"].fillna(False)
-df["is_buffer_block"] = df["is_buffer_block"].fillna(False)
+# Birleştirme sonrası eşleşmeyen satırlar NaN olur; fillna(False) yeni pandas
+# sürümlerinde object dtype bırakıp ~ operatörünü bozabildiği için notna() kullanılır.
+df["is_test_block"] = df["is_test_block"].notna()
+df["is_buffer_block"] = df["is_buffer_block"].notna()
 
 df["split"] = "train"
 df.loc[df["is_buffer_block"] & ~df["is_test_block"], "split"] = "buffer"

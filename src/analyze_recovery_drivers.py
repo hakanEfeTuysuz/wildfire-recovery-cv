@@ -2,7 +2,12 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import pearsonr
-from common import get_sentinel2_items, compute_nbr_and_mask, get_forest_mask, find_best_august_date, get_terrain_features
+from common import (
+    get_sentinel2_items, compute_nbr_and_mask, get_forest_mask, find_best_august_date,
+    get_terrain_features, align_to_reference, classify_severity, SEVERITY_LABELS, BURNED_CLASSES,
+)
+
+TARGET_YEAR = 2026
 
 print("--- Yangın öncesi (baseline / arazi kalitesi vekili) ---")
 pre_items = get_sentinel2_items("2021-07-20")
@@ -12,31 +17,31 @@ forest_mask = get_forest_mask(target_grid=nbr_pre)
 print("--- Yangın hemen sonrası ---")
 post_items = get_sentinel2_items("2021-08-14")
 nbr_post, mask_post = compute_nbr_and_mask(post_items)
+nbr_post, mask_post = align_to_reference(nbr_post, mask_post, nbr_pre)
 
 valid_2021 = mask_pre & mask_post & forest_mask
 dnbr_2021 = (nbr_pre - nbr_post).where(valid_2021)
 
-bounds = [-0.25, -0.1, 0.1, 0.27, 0.44, 0.66]
-severity_labels = [
-    "Yüksek yeniden büyüme", "Düşük yeniden büyüme", "Yanmamış",
-    "Düşük şiddet", "Orta-düşük şiddet", "Orta-yüksek şiddet", "Yüksek şiddet",
-]
-severity_class = np.digitize(dnbr_2021.values, bounds)
-severity_class = np.where(np.isnan(dnbr_2021.values), -1, severity_class)
-burned_indices = [3, 4, 5, 6]
+severity_labels = SEVERITY_LABELS
+severity_class = classify_severity(dnbr_2021.values)
+burned_indices = BURNED_CLASSES
 
-print("--- En güncel yıl (2026 Ağustos) ---")
-best_date, items = find_best_august_date(2026)
+print(f"--- En güncel yıl ({TARGET_YEAR} Ağustos) ---")
+best_date, items = find_best_august_date(TARGET_YEAR)
+if not items:
+    raise SystemExit(f"{TARGET_YEAR} Ağustos için uygun (bulutsuz) görüntü bulunamadı")
 print(f"  Seçilen tarih: {best_date}")
 nbr_2026, mask_2026 = compute_nbr_and_mask(items)
-nbr_2026 = nbr_2026.rio.reproject_match(nbr_pre)
-mask_2026 = mask_2026.astype("uint8").rio.reproject_match(nbr_pre) > 0
+nbr_2026, mask_2026 = align_to_reference(nbr_2026, mask_2026, nbr_pre)
 valid_2026 = (mask_2026 & forest_mask).values
 
 recovery_amount = (nbr_2026 - nbr_post).values
 baseline_vigor = nbr_pre.values
 
-overall_valid = valid_2021 & valid_2026 & np.isin(severity_class, burned_indices)
+overall_valid = (
+    valid_2021.values & valid_2026 & np.isin(severity_class, burned_indices)
+    & np.isfinite(recovery_amount) & np.isfinite(baseline_vigor)
+)
 
 fig, axes = plt.subplots(2, 2, figsize=(11, 9), sharex=True, sharey=True)
 results = []
@@ -100,5 +105,6 @@ np.savez(
     ns_gradient=ns_gradient[final_valid],
     x_coord=xx[final_valid],
     y_coord=yy[final_valid],
+    nbr_2026_date=np.array(str(best_date)),
 )
 print("Kaydedildi: outputs/recovery_dataset.npz (model için, koordinatlar dahil)")

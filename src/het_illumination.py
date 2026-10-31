@@ -29,7 +29,7 @@ xs = xmin + CELL * np.arange(int(np.rint((xmax - xmin) / CELL)) + 1)
 ys = ymax - CELL * np.arange(int(np.rint((ymax - ymin) / CELL)) + 1)
 H, W = len(ys), len(xs)
 grid = xr.DataArray(np.zeros((H, W), dtype="float32"), coords={"y": ys, "x": xs}, dims=("y", "x"))
-grid = grid.rio.write_crs("EPSG:32636")   # UTM 36K (T36S karoları)
+grid = grid.rio.write_crs("EPSG:32636")   # WGS 84 / UTM 36N (T36S karoları)
 
 elevation, _, _ = get_terrain_features(grid)
 dz_dx = np.gradient(elevation, axis=1) / CELL          # doğuya doğru yükseliş

@@ -2,24 +2,30 @@ import os
 from datetime import date
 import numpy as np
 import pandas as pd
-from common import get_sentinel2_items, compute_nbr_and_mask, get_forest_mask, get_dates_in_window
+from common import (
+    get_sentinel2_items, compute_nbr_and_mask, get_forest_mask, get_dates_in_window,
+    align_to_reference, classify_severity, SEVERITY_LABELS, BURNED_CLASSES, PIPELINE_VERSION,
+)
 
 PRE_FIRE_DATE = "2021-07-20"
 POST_FIRE_DATE = "2021-08-14"
 T0_DATE = date(2021, 8, 14)
 OUT_PATH = "outputs/recovery_timeseries_dense.csv"
 
-bounds = [-0.25, -0.1, 0.1, 0.27, 0.44, 0.66]
-severity_labels = [
-    "Yüksek yeniden büyüme", "Düşük yeniden büyüme", "Yanmamış",
-    "Düşük şiddet", "Orta-düşük şiddet", "Orta-yüksek şiddet", "Yüksek şiddet",
-]
-burned_indices = [3, 4, 5, 6]
+severity_labels = SEVERITY_LABELS
+burned_indices = BURNED_CLASSES
 
 os.makedirs("outputs", exist_ok=True)
 
 if os.path.exists(OUT_PATH):
     existing = pd.read_csv(OUT_PATH)
+    if "surum" not in existing.columns or (existing["surum"] != PIPELINE_VERSION).any():
+        # Eski sürümle (ör. Sentinel-2 ofset düzeltmesi öncesi) üretilmiş satırlar
+        # yeni satırlarla karıştırılmamalı: dosya yedeklenip baştan başlanır.
+        backup = OUT_PATH.replace(".csv", f"_eski_{date.today()}.csv")
+        os.replace(OUT_PATH, backup)
+        print(f"Mevcut dosya eski bir işleme sürümüne ait; {backup} olarak yedeklendi, baştan başlanıyor")
+        existing = pd.DataFrame(columns=["tarih", "ortalama_nbr"])
     done_dates = set(existing.dropna(subset=["ortalama_nbr"])["tarih"].astype(str).unique())
     bad_dates = set(existing["tarih"].astype(str).unique()) - done_dates
     if bad_dates:
@@ -44,11 +50,11 @@ forest_mask = get_forest_mask(target_grid=nbr_pre)
 print("--- Yangın hemen sonrası (t=0, referans) ---")
 post_items = get_sentinel2_items(POST_FIRE_DATE)
 nbr_post, mask_post = compute_nbr_and_mask(post_items)
+nbr_post, mask_post = align_to_reference(nbr_post, mask_post, nbr_pre)
 valid_2021 = mask_pre & mask_post & forest_mask
 dnbr_2021 = (nbr_pre - nbr_post).where(valid_2021)
 
-severity_class = np.digitize(dnbr_2021.values, bounds)
-severity_class = np.where(np.isnan(dnbr_2021.values), -1, severity_class)
+severity_class = classify_severity(dnbr_2021.values)
 
 
 MIN_VALID_PIXELS = 50
@@ -63,7 +69,8 @@ def build_rows(mean_arr, valid_2d, tarih, t_yil):
             continue
         mean_val = float(values.mean())
         rows.append({"tarih": tarih, "t_yil": t_yil,
-                      "siddet_sinifi": severity_labels[idx], "ortalama_nbr": mean_val})
+                      "siddet_sinifi": severity_labels[idx], "ortalama_nbr": mean_val,
+                      "surum": PIPELINE_VERSION})
     return rows
 
 
@@ -90,8 +97,7 @@ for year in range(2021, 2027):
         print(f"  {d} işleniyor (t={t_yil:.2f} yıl, {len(items)} görüntü)")
         try:
             nbr_d, mask_d = compute_nbr_and_mask(items)
-            nbr_d = nbr_d.rio.reproject_match(nbr_pre)
-            mask_d = mask_d.astype("uint8").rio.reproject_match(nbr_pre) > 0
+            nbr_d, mask_d = align_to_reference(nbr_d, mask_d, nbr_pre)
             valid_d = (mask_d & forest_mask).values
             append_rows(build_rows(nbr_d.values, valid_d, tarih_str, t_yil))
             done_dates.add(tarih_str)

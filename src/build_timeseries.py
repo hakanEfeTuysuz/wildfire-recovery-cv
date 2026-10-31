@@ -1,10 +1,10 @@
-import numpy as np
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
-from collections import defaultdict
-from common import BBOX_4326, get_catalog, get_sentinel2_items, compute_nbr_and_mask, get_forest_mask, find_best_august_date
-
-
+from common import (
+    get_sentinel2_items, compute_nbr_and_mask, get_forest_mask, find_best_august_date,
+    align_to_reference, classify_severity, SEVERITY_LABELS, BURNED_CLASSES,
+)
 
 print("=== Referans: yangın öncesi (2021-07-20) ===")
 pre_items = get_sentinel2_items("2021-07-20")
@@ -14,18 +14,14 @@ forest_mask = get_forest_mask(target_grid=nbr_pre)
 print("=== Referans: yangın hemen sonrası (2021-08-14) ===")
 post_items = get_sentinel2_items("2021-08-14")
 nbr_post, mask_post = compute_nbr_and_mask(post_items)
+nbr_post, mask_post = align_to_reference(nbr_post, mask_post, nbr_pre)
 
 valid_mask_2021 = mask_pre & mask_post & forest_mask
 dnbr_2021 = (nbr_pre - nbr_post).where(valid_mask_2021)
 
-bounds = [-0.25, -0.1, 0.1, 0.27, 0.44, 0.66]
-severity_labels = [
-    "Yüksek yeniden büyüme", "Düşük yeniden büyüme", "Yanmamış",
-    "Düşük şiddet", "Orta-düşük şiddet", "Orta-yüksek şiddet", "Yüksek şiddet",
-]
-severity_class = np.digitize(dnbr_2021.values, bounds)
-severity_class = np.where(np.isnan(dnbr_2021.values), -1, severity_class)
-burned_indices = [3, 4, 5, 6]  # sadece gerçekten yanmış sınıfları takip ediyoruz
+severity_labels = SEVERITY_LABELS
+severity_class = classify_severity(dnbr_2021.values)
+burned_indices = BURNED_CLASSES  # sadece gerçekten yanmış sınıfları takip ediyoruz
 
 records = []
 
@@ -50,13 +46,11 @@ for year in [2022, 2023, 2024, 2025, 2026]:
         continue
     print(f"  Seçilen tarih: {best_date}")
     nbr_year, mask_year = compute_nbr_and_mask(items)
-    nbr_year = nbr_year.rio.reproject_match(nbr_pre)
-    mask_year = mask_year.astype("uint8").rio.reproject_match(nbr_pre) > 0
+    nbr_year, mask_year = align_to_reference(nbr_year, mask_year, nbr_pre)
     valid_year = (mask_year & forest_mask).values
     mean_nbr_per_class(nbr_year, valid_year, str(year))
 
 df = pd.DataFrame(records)
-import os
 os.makedirs("outputs", exist_ok=True)
 df.to_csv("outputs/recovery_timeseries.csv", index=False)
 print(df)

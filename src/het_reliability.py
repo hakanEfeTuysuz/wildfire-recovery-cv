@@ -3,21 +3,22 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from itertools import combinations
-from common import get_sentinel2_items, compute_nbr_and_mask
+from common import get_sentinel2_items, compute_nbr_and_mask, PIPELINE_VERSION
 from het_core import load_dataset, condition_matrix, SpatialFolds, oof_predict
 
-DATES = ["2026-07-24", "2026-08-03"]   # npz'deki 2026-08-20 ile birlikte 3 tarih
+DATES = ["2026-07-24", "2026-08-03"]   # npz'deki ana tarih (ör. 2026-08-20) ile birlikte 3 tarih
 d = load_dataset()
+MAIN_DATE = str(d["nbr_2026_date"]) if "nbr_2026_date" in d else "2026-08-20"
 x_c, y_c = d["x_coord"], d["y_coord"]
 X = condition_matrix(d)
 dnbr = d["dnbr_value"].astype("float64")
 post = d["baseline_vigor"].astype("float64") - dnbr
 
-series = {"2026-08-20": d["nbr_2026"].astype("float64")}
+series = {MAIN_DATE: d["nbr_2026"].astype("float64")}
 xs, ys = xr.DataArray(x_c, dims="p"), xr.DataArray(y_c, dims="p")
 
 for date in DATES:
-    cache = f"outputs/nbr_cache_{date}.npy"
+    cache = f"outputs/nbr_cache_v{PIPELINE_VERSION}_{date}.npy"
     if os.path.exists(cache):
         series[date] = np.load(cache).astype("float64")
         print(f"{date}: önbellekten okundu")

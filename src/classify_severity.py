@@ -2,22 +2,18 @@ import numpy as np
 import rioxarray
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
+from common import classify_severity, SEVERITY_LABELS
 
 dnbr = rioxarray.open_rasterio("outputs/dnbr_manavgat_2021.tif", masked=True).squeeze()
 values = dnbr.values
 
-bounds = [-0.25, -0.1, 0.1, 0.27, 0.44, 0.66]
-labels = [
-    "Yüksek yeniden büyüme", "Düşük yeniden büyüme", "Yanmamış",
-    "Düşük şiddet", "Orta-düşük şiddet", "Orta-yüksek şiddet", "Yüksek şiddet",
-]
+labels = SEVERITY_LABELS
 colors = ["#0b6623", "#66bb6a", "#fff9c4", "#ffd54f", "#ff8a65", "#e53935", "#7b0000"]
 
-valid = ~np.isnan(values)
-severity_class = np.full(values.shape, -1, dtype=int)  # -1 = orman dışı / maskeli
-severity_class[valid] = np.digitize(values[valid], bounds)
+severity_class = classify_severity(values)  # -1 = orman dışı / maskeli
 
-pixel_area_ha = (10 * 10) / 10000
+res_x, res_y = dnbr.rio.resolution()
+pixel_area_ha = abs(res_x * res_y) / 10000
 print("Sınıf bazlı alan (sadece orman pikselleri):")
 total_burned_ha = 0
 for i, label in enumerate(labels):
