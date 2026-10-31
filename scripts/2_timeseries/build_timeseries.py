@@ -1,26 +1,14 @@
-import os
+"""Yıllık (her yılın en az bulutlu Ağustos görüntüsü) şiddet sınıfı bazında NBR zaman serisi."""
 import pandas as pd
 import matplotlib.pyplot as plt
-from common import (
-    get_sentinel2_items, compute_nbr_and_mask, get_forest_mask, find_best_august_date,
-    align_to_reference, classify_severity, SEVERITY_LABELS, BURNED_CLASSES,
-)
+from wildfire.config import FIGURES_DIR, TABLES_DIR, TARGET_YEAR
+from wildfire.imagery import compute_nbr_and_mask, find_best_august_date, align_to_reference, load_fire_reference
+from wildfire.severity import SEVERITY_LABELS, BURNED_CLASSES
 
-print("=== Referans: yangın öncesi (2021-07-20) ===")
-pre_items = get_sentinel2_items("2021-07-20")
-nbr_pre, mask_pre = compute_nbr_and_mask(pre_items)
-forest_mask = get_forest_mask(target_grid=nbr_pre)
-
-print("=== Referans: yangın hemen sonrası (2021-08-14) ===")
-post_items = get_sentinel2_items("2021-08-14")
-nbr_post, mask_post = compute_nbr_and_mask(post_items)
-nbr_post, mask_post = align_to_reference(nbr_post, mask_post, nbr_pre)
-
-valid_mask_2021 = mask_pre & mask_post & forest_mask
-dnbr_2021 = (nbr_pre - nbr_post).where(valid_mask_2021)
-
+ref = load_fire_reference()
+nbr_pre, mask_pre, forest_mask = ref.nbr_pre, ref.mask_pre, ref.forest_mask
 severity_labels = SEVERITY_LABELS
-severity_class = classify_severity(dnbr_2021.values)
+severity_class = ref.severity_class
 burned_indices = BURNED_CLASSES  # sadece gerçekten yanmış sınıfları takip ediyoruz
 
 records = []
@@ -36,9 +24,9 @@ def mean_nbr_per_class(nbr_array, valid_2d, label):
 
 
 mean_nbr_per_class(nbr_pre, (mask_pre & forest_mask).values, "2021_oncesi")
-mean_nbr_per_class(nbr_post, valid_mask_2021.values, "2021_sonrasi")
+mean_nbr_per_class(ref.nbr_post, ref.valid.values, "2021_sonrasi")
 
-for year in [2022, 2023, 2024, 2025, 2026]:
+for year in range(2022, TARGET_YEAR + 1):
     print(f"=== {year} Ağustos ===")
     best_date, items = find_best_august_date(year)
     if not items:
@@ -51,8 +39,8 @@ for year in [2022, 2023, 2024, 2025, 2026]:
     mean_nbr_per_class(nbr_year, valid_year, str(year))
 
 df = pd.DataFrame(records)
-os.makedirs("outputs", exist_ok=True)
-df.to_csv("outputs/recovery_timeseries.csv", index=False)
+out_csv = TABLES_DIR / "recovery_timeseries.csv"
+df.to_csv(out_csv, index=False)
 print(df)
 
 fig, ax = plt.subplots(figsize=(9, 6))
@@ -65,5 +53,6 @@ ax.set_title("Yangın Sonrası Toparlanma — Şiddet Sınıfına Göre NBR Zama
 ax.legend()
 plt.xticks(rotation=45)
 plt.tight_layout()
-plt.savefig("outputs/recovery_timeseries.png", dpi=150)
-print("Kaydedildi: outputs/recovery_timeseries.csv ve outputs/recovery_timeseries.png")
+out_png = FIGURES_DIR / "recovery_timeseries.png"
+plt.savefig(out_png, dpi=150)
+print(f"Kaydedildi: {out_csv} ve {out_png}")

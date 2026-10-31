@@ -1,20 +1,15 @@
+"""Het-σ'nın blok boyutuna duyarlılığı ve konformal kantil regresyonu (CQR) ile
+%80 aralıkların kalibrasyonu (yalnızca konsol çıktısı)."""
 import numpy as np
 import pandas as pd
 from sklearn.metrics import r2_score
-from het_core import load_dataset, condition_matrix, SpatialFolds, oof_predict
+from wildfire.het import load_dataset, condition_matrix, SpatialFolds, oof_predict, spread_ratio
 
 d = load_dataset()
 x_c, y_c = d["x_coord"], d["y_coord"]
 y = d["nbr_2026"].astype("float64")
 X = condition_matrix(d)
 elev = d["elevation"]
-
-
-def spread_ratio(v, cond, nb=10):
-    edges = np.quantile(cond, np.linspace(0, 1, nb + 1))
-    idx = np.clip(np.searchsorted(edges, cond, side="right") - 1, 0, nb - 1)
-    s = np.array([v[idx == b].std() for b in range(nb)])
-    return float(s.max() / s.min())
 
 
 print("=== 1) Blok boyutu duyarlılığı ===")

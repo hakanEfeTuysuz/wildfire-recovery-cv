@@ -1,10 +1,15 @@
+"""Model türü x blok boyutu mekansal beceri eğrisi ve Het-σ'nın yığılmış / iç içe
+(sızıntısız) hesabının karşılaştırması."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-from het_core import load_dataset, condition_matrix, SpatialFolds, oof_predict, MAX_TRAIN, SEED
+from wildfire.config import TABLES_DIR
+from wildfire.het import (
+    load_dataset, condition_matrix, SpatialFolds, oof_predict, oof_with_baseline, spread_ratio, MAX_TRAIN, SEED,
+)
 
 BLOCK_SIZES = (1000, 2000, 3000, 5000)
 DEEP_ITER = 200
@@ -32,29 +37,6 @@ def linear():
 MODELS = {"Doğrusal": linear, "Sığ ağaç (derinlik 3)": shallow, "Derin ağaç (Het'te kullanılan)": deep}
 
 
-def oof_with_baseline(folds, make_model):
-    """Hem model tahminini hem de 'eğitim ortalaması' referans tahminini döndürür."""
-    rng = np.random.default_rng(SEED)
-    pred = np.full(len(y), np.nan)
-    base = np.full(len(y), np.nan)
-    for i in range(folds.k):
-        idx = np.flatnonzero(folds.train_masks[i])
-        if len(idx) > MAX_TRAIN:
-            idx = rng.choice(idx, MAX_TRAIN, replace=False)
-        m = make_model().fit(X[idx], y[idx])
-        test = folds.fold == i
-        pred[test] = m.predict(X[test])
-        base[test] = y[idx].mean()
-    return pred, base
-
-
-def spread_ratio(v, cond, nb=10):
-    edges = np.quantile(cond, np.linspace(0, 1, nb + 1))
-    idx = np.clip(np.searchsorted(edges, cond, side="right") - 1, 0, nb - 1)
-    s = np.array([v[idx == b].std() for b in range(nb)])
-    return float(s.max() / s.min())
-
-
 print("=== 1) Mekansal beceri eğrisi: model türü x blok boyutu ===")
 sst = float(np.sum((y - y.mean()) ** 2))
 rows = []
@@ -62,7 +44,7 @@ for block in BLOCK_SIZES:
     folds = SpatialFolds(x_c, y_c, block=block)
     for name, mk in MODELS.items():
         print(f"  blok {block} m, {name} ...")
-        pred, base = oof_with_baseline(folds, mk)
+        pred, base = oof_with_baseline(folds, X, y, mk)
         sse = float(np.sum((y - pred) ** 2))
         sse_base = float(np.sum((y - base) ** 2))
         rows.append({
@@ -73,7 +55,7 @@ for block in BLOCK_SIZES:
         })
 skill = pd.DataFrame(rows)
 print(skill.to_string(index=False))
-skill.to_csv("outputs/het_skill_curve.csv", index=False)
+skill.to_csv(TABLES_DIR / "het_skill_curve.csv", index=False)
 
 
 def nested_expected_sigma(folds, block=1000):

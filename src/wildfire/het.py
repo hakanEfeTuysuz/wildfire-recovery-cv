@@ -1,15 +1,28 @@
+"""Het (koşullu toparlanma sapması) için ortak araçlar: veri seti, tamponlu
+mekansal katlar, out-of-fold tahmin ve tanılama yardımcıları."""
 import numpy as np
+from scipy import ndimage
 from sklearn.ensemble import HistGradientBoostingRegressor
+
+from wildfire.config import RECOVERY_DATASET
 
 BLOCK = 1000
 K = 5
 MAX_TRAIN = 400_000
 SEED = 42
 
+# het_reliability.py / het_scales.py: veri setindeki ana tarihle aynı yazdan ek tarihler
+EXTRA_DATES = ["2026-07-24", "2026-08-03"]
 
-def load_dataset(path="outputs/recovery_dataset.npz"):
+
+def load_dataset(path=RECOVERY_DATASET):
     d = np.load(path)
     return {k: d[k] for k in d.files}
+
+
+def main_date(d):
+    """Veri setindeki hedef (2026) görüntünün tarihi; eski npz dosyalarında yoksa varsayılan."""
+    return str(d["nbr_2026_date"]) if "nbr_2026_date" in d else "2026-08-20"
 
 
 def condition_matrix(d):
@@ -69,3 +82,39 @@ def percentile_from_quantiles(y, qpred, qs):
     w = (y[r] - lo) / np.maximum(hi - lo, 1e-9)
     p[r] = qs[i - 1] + w * (qs[i] - qs[i - 1])
     return p
+
+
+def oof_with_baseline(folds, X, y, make_model):
+    """Herhangi bir model için OOF tahmin ve 'eğitim ortalaması' referans tahmini.
+
+    Beceri skoru = 1 - SSE(model) / SSE(referans); referans, her katta yalnızca
+    o katın eğitim pikselleri ile hesaplanan ortalamadır.
+    """
+    rng = np.random.default_rng(SEED)
+    pred = np.full(len(y), np.nan)
+    base = np.full(len(y), np.nan)
+    for i in range(folds.k):
+        idx = np.flatnonzero(folds.train_masks[i])
+        if len(idx) > MAX_TRAIN:
+            idx = rng.choice(idx, MAX_TRAIN, replace=False)
+        m = make_model().fit(X[idx], y[idx])
+        test = folds.fold == i
+        pred[test] = m.predict(X[test])
+        base[test] = y[idx].mean()
+    return pred, base
+
+
+def spread_ratio(v, cond, nb=10):
+    """v'nin, cond'un nb kantil grubundaki standart sapmalarının max/min oranı (1,0 ideal)."""
+    edges = np.quantile(cond, np.linspace(0, 1, nb + 1))
+    idx = np.clip(np.searchsorted(edges, cond, side="right") - 1, 0, nb - 1)
+    s = np.array([v[idx == b].std() for b in range(nb)])
+    return float(s.max() / s.min())
+
+
+def smooth_grid(g, size, min_coverage=0.2):
+    """NaN'ları yok sayan kayan ortalama; kapsamı min_coverage altındaki hücreler NaN olur."""
+    ok = np.isfinite(g)
+    num = ndimage.uniform_filter(np.where(ok, g, 0).astype("float32"), size=size, mode="constant")
+    den = ndimage.uniform_filter(ok.astype("float32"), size=size, mode="constant")
+    return np.where(den > min_coverage, num / np.maximum(den, 1e-6), np.nan).astype("float32")

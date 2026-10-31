@@ -1,14 +1,16 @@
+"""Aydınlanma (güneş geometrisi / gölgeleme) kontrolü: doğu-batı eğim ve gölgeleme
+eklenince beklenen NBR modeli ve Het'in ölçek yapısı değişiyor mu?"""
 import numpy as np
 import pandas as pd
 import xarray as xr
 import rioxarray  # noqa: F401  (rio erişimcisi için)
-from scipy import ndimage
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-from common import get_terrain_features
-from het_core import load_dataset, condition_matrix, SpatialFolds, MAX_TRAIN, SEED
+from wildfire.config import TABLES_DIR, UTM_CRS
+from wildfire.imagery import get_terrain_features
+from wildfire.het import load_dataset, condition_matrix, SpatialFolds, oof_with_baseline, smooth_grid, SEED
 
 CELL = 10
 # Sentinel-2 geçişi yaklaşık 08:35 UTC (Ağustos, ~37°K, 31.4°D): güneş güneydoğuda
@@ -29,7 +31,7 @@ xs = xmin + CELL * np.arange(int(np.rint((xmax - xmin) / CELL)) + 1)
 ys = ymax - CELL * np.arange(int(np.rint((ymax - ymin) / CELL)) + 1)
 H, W = len(ys), len(xs)
 grid = xr.DataArray(np.zeros((H, W), dtype="float32"), coords={"y": ys, "x": xs}, dims=("y", "x"))
-grid = grid.rio.write_crs("EPSG:32636")   # WGS 84 / UTM 36N (T36S karoları)
+grid = grid.rio.write_crs(UTM_CRS)   # WGS 84 / UTM 36N (T36S karoları)
 
 elevation, _, _ = get_terrain_features(grid)
 dz_dx = np.gradient(elevation, axis=1) / CELL          # doğuya doğru yükseliş
@@ -57,32 +59,10 @@ def mk_shallow():
     return HistGradientBoostingRegressor(max_iter=SHALLOW_ITER, learning_rate=0.1, max_depth=3, random_state=SEED)
 
 
-def oof(folds, Xm, make_model):
-    rng = np.random.default_rng(SEED)
-    pred = np.full(len(y), np.nan)
-    base = np.full(len(y), np.nan)
-    for i in range(folds.k):
-        idx = np.flatnonzero(folds.train_masks[i])
-        if len(idx) > MAX_TRAIN:
-            idx = rng.choice(idx, MAX_TRAIN, replace=False)
-        m = make_model().fit(Xm[idx], y[idx])
-        test = folds.fold == i
-        pred[test] = m.predict(Xm[test])
-        base[test] = y[idx].mean()
-    return pred, base
-
-
-def smooth(g, size):
-    ok = np.isfinite(g)
-    num = ndimage.uniform_filter(np.where(ok, g, 0).astype("float32"), size=size, mode="constant")
-    den = ndimage.uniform_filter(ok.astype("float32"), size=size, mode="constant")
-    return np.where(den > 0.2, num / np.maximum(den, 1e-6), np.nan).astype("float32")
-
-
 def scale_shares(resid):
     g = np.full((H, W), np.nan, dtype="float32")
     g[iy, ix] = resid
-    s1, s2, s3 = smooth(g, W_FINE), smooth(g, W_MID), smooth(g, W_WIDE)
+    s1, s2, s3 = smooth_grid(g, W_FINE), smooth_grid(g, W_MID), smooth_grid(g, W_WIDE)
     comps = {
         "< 50 m": (g - s1)[iy, ix],
         "50 m - 1 km": (s1 - s2)[iy, ix],
@@ -105,7 +85,7 @@ for block in BLOCKS:
     for mname, mk in (("Doğrusal", mk_linear), ("Sığ ağaç", mk_shallow)):
         for setup, Xm in (("5 koşul", X), ("5 koşul + doğu-batı eğim + gölgeleme", X2)):
             print(f"  blok {block} m, {mname}, {setup} ...")
-            pred, base = oof(folds, Xm, mk)
+            pred, base = oof_with_baseline(folds, Xm, y, mk)
             sse = float(np.sum((y - pred) ** 2))
             rows.append({
                 "blok (m)": block, "model": mname, "koşul kümesi": setup,
@@ -117,7 +97,7 @@ for block in BLOCKS:
 tab = pd.DataFrame(rows)
 print("\n=== 1) Aydınlanma değişkenleri modele katkı sağlıyor mu? ===")
 print(tab.to_string(index=False))
-tab.to_csv("outputs/het_illumination_skill.csv", index=False)
+tab.to_csv(TABLES_DIR / "het_illumination_skill.csv", index=False)
 
 r0 = resid_by_setup["5 koşul"]
 print("\n=== 2) Mevcut artığın (5 koşullu, doğrusal, 1 km) aydınlanma değişkenleriyle ilişkisi ===")
@@ -136,4 +116,4 @@ out = pd.DataFrame({
 })
 print("(birim: 1e-4 NBR²; sütunlar mutlak varyans katkısıdır, doğrudan karşılaştırılabilir)")
 print(out.to_string(index=False))
-out.to_csv("outputs/het_illumination_scales.csv", index=False)
+out.to_csv(TABLES_DIR / "het_illumination_scales.csv", index=False)

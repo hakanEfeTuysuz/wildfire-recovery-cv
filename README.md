@@ -3,7 +3,7 @@
 
 Sentinel-2 uydu görüntülerinden yangının etkilediği alanı ve yanık şiddetini belirleyen, 2021-2026 arasındaki bitki örtüsü toparlanmasını izleyen ve beklenenden farklı toparlanan alanları **Het (Koşullu Toparlanma Sapması)** göstergesiyle haritalayan, tamamen Python ile yazılmış bir uzaktan algılama çalışması.
 
-> **Not (Ekim 2026):** Kodda, 2022 sonrası Sentinel-2 görüntülerinin NBR değerlerini sistematik olarak bozan bir radyometrik ofset hatası düzeltildi (ayrıntılar: [Önemli Düzeltme](#️-önemli-düzeltme-sentinel-2-radyometrik-ofset)). `outputs/` klasöründeki sayısal sonuçlar ve aşağıdaki bulgular **düzeltmeden önce** üretilmiştir; pipeline yeniden çalıştırılıp güncellenmelidir.
+> **Not (Ekim 2026):** Kodda, 2022 sonrası Sentinel-2 görüntülerinin NBR değerlerini sistematik olarak bozan bir radyometrik ofset hatası düzeltildi (ayrıntılar: [Önemli Düzeltme](#️-önemli-düzeltme-sentinel-2-radyometrik-ofset)). `outputs/` klasöründeki sayısal sonuçlar (ve `data/interim/recovery_dataset.npz`) ve aşağıdaki bulgular **düzeltmeden önce** üretilmiştir; pipeline yeniden çalıştırılıp güncellenmelidir.
 
 ---
 
@@ -99,26 +99,38 @@ Beklenen değer, komşu pikseller arasındaki benzerlikten kaynaklanan bilgi sı
 
 ```
 wildfire-recovery-cv/
-├── src/
-│   ├── common.py                    # STAC erişimi, ofset düzeltmesi, maskeleme, mozaikleme, DEM özellikleri
-│   ├── fetch_data.py                # (keşif) bölgedeki uygun görüntüleri listeler
-│   ├── compute_dnbr.py              # dNBR hesabı → GeoTIFF + önizleme
-│   ├── classify_severity.py         # USGS şiddet sınıfları ve alan istatistiği
-│   ├── build_timeseries.py          # Yıllık (Ağustos) NBR zaman serisi
-│   ├── build_dense_timeseries.py    # Yoğun (tüm bulutsuz yaz görüntüleri) zaman serisi, kaldığı yerden devam eder
-│   ├── estimate_recovery_time.py    # Doygunluk eğrisi ile toparlanma süresi
-│   ├── analyze_recovery_drivers.py  # Toparlanma sürücüleri + model veri setinin (npz) üretimi
-│   ├── model_recovery.py            # LR / RF, naif vs. mekansal blok doğrulama
-│   ├── het_core.py                  # Het için ortak araçlar (mekansal katlar, OOF tahmin, persentil)
-│   ├── het_method.py                # Het göstergesi, karşılaştırma tablosu ve harita
-│   ├── het_diagnostics.py           # Het-z / Het-σ / Het-P, kalibrasyon, varyogram, yamalar
-│   ├── het_calibration.py           # Blok boyutu duyarlılığı ve konformal kalibrasyon
-│   ├── het_skill.py                 # Model türü × blok boyutu beceri eğrisi, iç içe σ
-│   ├── het_reliability.py           # Aynı yazın farklı tarihleri arasında güvenilirlik
-│   ├── het_scales.py                # Het'in ölçek bileşenleri ve tekrarlanabilirliği
-│   └── het_illumination.py          # Güneş geometrisi / gölgeleme etkisinin kontrolü
-├── outputs/                         # Grafikler, tablolar ve ara veriler
-├── requirements.txt
+├── src/wildfire/                    # Ortak kod (kurulabilir paket)
+│   ├── config.py                    # Dosya yolları, çalışma alanı (BBOX), referans tarihler, PIPELINE_VERSION
+│   ├── severity.py                  # USGS dNBR şiddet eşikleri, etiketleri, renkleri
+│   ├── imagery.py                   # STAC erişimi, ofset düzeltmesi, maskeleme, mozaikleme, DEM, load_fire_reference()
+│   └── het.py                       # Het için mekansal katlar, OOF tahmin, persentil ve tanılama yardımcıları
+├── scripts/                         # Çalıştırılan betikler (aşama sırasıyla)
+│   ├── list_scenes.py               # (keşif) bölgedeki uygun görüntüleri listeler
+│   ├── 1_severity/
+│   │   ├── compute_dnbr.py          # dNBR hesabı → GeoTIFF + önizleme
+│   │   └── classify_severity.py     # USGS şiddet sınıfları ve alan istatistiği
+│   ├── 2_timeseries/
+│   │   ├── build_timeseries.py      # Yıllık (Ağustos) NBR zaman serisi
+│   │   ├── build_dense_timeseries.py# Yoğun (tüm bulutsuz yaz görüntüleri) seri, kaldığı yerden devam eder
+│   │   └── estimate_recovery_time.py# Doygunluk eğrisi ile toparlanma süresi
+│   ├── 3_drivers/
+│   │   ├── analyze_recovery_drivers.py # Toparlanma sürücüleri + model veri setinin (npz) üretimi
+│   │   └── model_recovery.py        # LR / RF, naif vs. mekansal blok doğrulama
+│   └── 4_het/
+│       ├── het_method.py            # Het göstergesi, karşılaştırma tablosu ve harita
+│       ├── het_diagnostics.py       # Het-z / Het-σ / Het-P, kalibrasyon, varyogram, yamalar
+│       ├── het_calibration.py       # Blok boyutu duyarlılığı ve konformal kalibrasyon
+│       ├── het_skill.py             # Model türü × blok boyutu beceri eğrisi, iç içe σ
+│       ├── het_reliability.py       # Aynı yazın farklı tarihleri arasında güvenilirlik
+│       ├── het_scales.py            # Het'in ölçek bileşenleri ve tekrarlanabilirliği
+│       └── het_illumination.py      # Güneş geometrisi / gölgeleme etkisinin kontrolü
+├── data/interim/                    # Büyük ara veriler: dNBR GeoTIFF, recovery_dataset.npz, NBR önbellekleri (git'e eklenmez)
+├── outputs/
+│   ├── figures/                     # Haritalar ve grafikler (.png)
+│   ├── tables/                      # Sonuç tabloları (.csv)
+│   └── logs/                        # Uzun süren analizlerin konsol çıktıları (.txt)
+├── pyproject.toml                   # Paket tanımı ve bağımlılıklar
+├── requirements.txt                 # pip install -r ile paketi bağımlılıklarıyla kurar
 └── README.md
 ```
 
@@ -131,38 +143,40 @@ git clone https://github.com/hakanEfeTuysuz/wildfire-recovery-cv.git
 cd wildfire-recovery-cv
 python3 -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements.txt   # bağımlılıkları ve src/wildfire paketini (editable) kurar
 ```
 
 Planetary Computer verileri için API anahtarı gerekmez (imzalı URL'ler `planetary-computer` paketi tarafından otomatik alınır). İnternet bağlantısı gereklidir.
 
 ## Kullanım
 
-Tüm betikler **depo kök dizininden** çalıştırılmalıdır (çıktı yolları `outputs/` klasörüne görelidir). Önerilen sıra ve bağımlılıklar:
+Paket kurulduktan sonra betikler **herhangi bir dizinden** çalıştırılabilir; tüm okuma/yazma yolları `src/wildfire/config.py` içinde depo köküne göre tanımlıdır. Önerilen sıra ve bağımlılıklar:
 
 ```bash
 # 1) Yanık alanı ve şiddet
-python src/compute_dnbr.py               # → outputs/dnbr_manavgat_2021.tif
-python src/classify_severity.py          # dnbr .tif dosyasını kullanır
+python scripts/1_severity/compute_dnbr.py               # → data/interim/dnbr_manavgat_2021.tif
+python scripts/1_severity/classify_severity.py          # dnbr .tif dosyasını kullanır
 
 # 2) Zaman serileri ve toparlanma süresi
-python src/build_timeseries.py
-python src/build_dense_timeseries.py     # uzun sürer; kesilirse kaldığı yerden devam eder
-python src/estimate_recovery_time.py     # yoğun seriyi kullanır
+python scripts/2_timeseries/build_timeseries.py
+python scripts/2_timeseries/build_dense_timeseries.py   # uzun sürer; kesilirse kaldığı yerden devam eder
+python scripts/2_timeseries/estimate_recovery_time.py   # yoğun seriyi kullanır
 
 # 3) Toparlanma sürücüleri ve tahmin modeli
-python src/analyze_recovery_drivers.py   # → outputs/recovery_dataset.npz
-python src/model_recovery.py
+python scripts/3_drivers/analyze_recovery_drivers.py    # → data/interim/recovery_dataset.npz
+python scripts/3_drivers/model_recovery.py
 
 # 4) Het göstergesi ve tanılamaları (hepsi recovery_dataset.npz kullanır)
-python src/het_method.py
-python src/het_diagnostics.py
-python src/het_calibration.py
-python src/het_skill.py
-python src/het_reliability.py            # ek tarihleri indirir ve önbelleğe alır
-python src/het_scales.py                 # het_reliability.py önbelleğine ihtiyaç duyar
-python src/het_illumination.py
+python scripts/4_het/het_method.py
+python scripts/4_het/het_diagnostics.py
+python scripts/4_het/het_calibration.py
+python scripts/4_het/het_skill.py
+python scripts/4_het/het_reliability.py                 # ek tarihleri indirir ve data/interim'e önbelleğe alır
+python scripts/4_het/het_scales.py                      # het_reliability.py önbelleğine ihtiyaç duyar
+python scripts/4_het/het_illumination.py
 ```
+
+Uzun süren analizlerin konsol çıktısını saklamak için örneğin: `python scripts/4_het/het_skill.py | tee outputs/logs/het_skill.txt`
 
 Het betikleri yaklaşık 4 milyon pikselle çalışır; bellek ve süre gereksinimi yüksektir (birkaç GB RAM, betik başına dakikalar-saatler).
 
@@ -170,20 +184,20 @@ Het betikleri yaklaşık 4 milyon pikselle çalışır; bellek ve süre gereksin
 
 | Dosya | Üreten betik | İçerik |
 |---|---|---|
-| `dnbr_preview.png` | compute_dnbr | dNBR haritası (orman+maki) |
-| `severity_classified.png` | classify_severity | Şiddet sınıfları haritası |
-| `recovery_timeseries.csv/.png` | build_timeseries | Sınıf bazında yıllık ortalama NBR |
-| `recovery_timeseries_dense.csv` | build_dense_timeseries | Sınıf bazında tarih-tarih ortalama NBR |
-| `recovery_curves.png` | estimate_recovery_time | Uydurulan toparlanma eğrileri |
-| `recovery_vs_baseline_vigor.png` | analyze_recovery_drivers | Yangın öncesi NBR – toparlanma ilişkisi |
-| `het_comparison.csv`, `het_map.png` | het_method | Göstergelerin koşullara bağımlılığı, Het haritası |
-| `het_diagnostics.csv`, `het_variogram.png` | het_diagnostics | Yayılım eşitliği, mekansal yapı |
-| `het_skill_curve.csv`, `het_skill.txt` | het_skill | Beceri eğrisi (txt: konsol çıktısı) |
-| `het_reliability.csv` | het_reliability | Tarihler arası güvenilirlik |
-| `het_scales.csv`, `het_scales.txt` | het_scales | Ölçek bileşenleri |
-| `het_illumination_*.csv` | het_illumination | Aydınlanma değişkenlerinin katkısı |
+| `figures/dnbr_preview.png` | compute_dnbr | dNBR haritası (orman+maki) |
+| `figures/severity_classified.png` | classify_severity | Şiddet sınıfları haritası |
+| `tables/recovery_timeseries.csv`, `figures/recovery_timeseries.png` | build_timeseries | Sınıf bazında yıllık ortalama NBR |
+| `tables/recovery_timeseries_dense.csv` | build_dense_timeseries | Sınıf bazında tarih-tarih ortalama NBR |
+| `figures/recovery_curves.png` | estimate_recovery_time | Uydurulan toparlanma eğrileri |
+| `figures/recovery_vs_baseline_vigor.png` | analyze_recovery_drivers | Yangın öncesi NBR – toparlanma ilişkisi |
+| `tables/het_comparison.csv`, `figures/het_map.png` | het_method | Göstergelerin koşullara bağımlılığı, Het haritası |
+| `tables/het_diagnostics.csv`, `figures/het_variogram.png` | het_diagnostics | Yayılım eşitliği, mekansal yapı |
+| `tables/het_skill_curve.csv`, `logs/het_skill.txt` | het_skill | Beceri eğrisi (txt: konsol çıktısı) |
+| `tables/het_reliability.csv` | het_reliability | Tarihler arası güvenilirlik |
+| `tables/het_scales.csv`, `logs/het_scales.txt` | het_scales | Ölçek bileşenleri |
+| `tables/het_illumination_*.csv`, `logs/het_illumination.txt` | het_illumination | Aydınlanma değişkenlerinin katkısı |
 
-`recovery_dataset.npz`, `nbr_cache_*.npy` ve `*.tif` dosyaları büyük oldukları için depoya eklenmez (`.gitignore`).
+Tüm yollar `outputs/` altındadır. `data/interim/` içindeki dNBR GeoTIFF, `recovery_dataset.npz` ve `nbr_cache_*.npy` dosyaları büyük oldukları için depoya eklenmez (`.gitignore`).
 
 ## Bulgular
 
@@ -205,9 +219,9 @@ Het betikleri yaklaşık 4 milyon pikselle çalışır; bellek ve süre gereksin
 
 | | |
 |---|---|
-| ![dNBR](outputs/dnbr_preview.png) | ![Şiddet](outputs/severity_classified.png) |
-| ![Zaman serisi](outputs/recovery_timeseries.png) | ![Toparlanma eğrileri](outputs/recovery_curves.png) |
-| ![Sürücüler](outputs/recovery_vs_baseline_vigor.png) | ![Het haritası](outputs/het_map.png) |
+| ![dNBR](outputs/figures/dnbr_preview.png) | ![Şiddet](outputs/figures/severity_classified.png) |
+| ![Zaman serisi](outputs/figures/recovery_timeseries.png) | ![Toparlanma eğrileri](outputs/figures/recovery_curves.png) |
+| ![Sürücüler](outputs/figures/recovery_vs_baseline_vigor.png) | ![Het haritası](outputs/figures/het_map.png) |
 
 ## ⚠️ Önemli Düzeltme: Sentinel-2 Radyometrik Ofset
 
@@ -219,7 +233,7 @@ NBR_hatalı = (NIR − SWIR) / (NIR + SWIR + 2000)
 
 olur; payda yapay olarak büyür ve 2022 sonrası NBR değerleri sıfıra doğru sıkışır (tipik bitki örtüsünde ~%30-35 küçülme). Bu durum 2021 (ofsetsiz) ile sonraki yılların karşılaştırılmasını sistematik olarak bozar ve örneğin "toparlanmanın yangın öncesi düzeyin altında platoya ulaşması" gibi bir sonucu kısmen ya da tamamen yapay olarak üretebilir.
 
-`src/common.py` artık her karo için `s2:processing_baseline` özelliğini okuyup gerekiyorsa ofseti mozaiklemeden önce uygular. Eski önbelleklerin yanlışlıkla yeniden kullanılmaması için `PIPELINE_VERSION` eklenmiştir: `build_dense_timeseries.py` eski sürümlü CSV'yi yedekleyip baştan başlar, `het_reliability.py` önbellek dosyalarını sürüm numarasıyla adlandırır.
+`src/wildfire/imagery.py` artık her karo için `s2:processing_baseline` özelliğini okuyup gerekiyorsa ofseti mozaiklemeden önce uygular. Eski önbelleklerin yanlışlıkla yeniden kullanılmaması için `PIPELINE_VERSION` eklenmiştir: `build_dense_timeseries.py` eski sürümlü CSV'yi `data/interim/` altına yedekleyip baştan başlar, `het_reliability.py` önbellek dosyalarını sürüm numarasıyla adlandırır.
 
 Aynı güncellemede ayrıca şu hatalar düzeltilmiştir:
 - SCL nodata pikselleri (`masked=True` ile NaN olan) "geçerli" sayılıyordu; maskeye `notnull` koşulu eklendi.
@@ -227,7 +241,7 @@ Aynı güncellemede ayrıca şu hatalar düzeltilmiştir:
 - Yangın sonrası görüntü, yangın öncesi ızgaraya açıkça hizalanmıyordu.
 - `model_recovery.py` içindeki `fillna(False)`, yeni pandas sürümlerinde object dtype bırakıp `~` operatörünü bozabiliyordu.
 - `requirements.txt` eksikti (pandas, scikit-learn, xarray, pyproj yoktu) ve kullanılmayan ağır paketler (torch, plotly, scikit-image) içeriyordu.
-- Şiddet eşikleri ve etiketleri tek bir yerde (`common.py`) toplandı.
+- Şiddet eşikleri ve etiketleri tek bir yerde (`src/wildfire/severity.py`) toplandı.
 
 ## Sınırlılıklar
 

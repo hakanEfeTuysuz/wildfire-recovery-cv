@@ -1,15 +1,18 @@
+"""Yoğun zaman serisine doygunluk eğrisi NBR(t) = A - (A - N0)·exp(-t/tau) uydurarak
+şiddet sınıfı bazında toparlanma süresi kestirimi."""
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
 from scipy.stats import linregress
+from wildfire.config import FIGURES_DIR, TABLES_DIR
+from wildfire.severity import BURNED_LABELS
 
-df = pd.read_csv("outputs/recovery_timeseries_dense.csv")
+df = pd.read_csv(TABLES_DIR / "recovery_timeseries_dense.csv")
 df = df.dropna(subset=["ortalama_nbr"])
 
-severity_order = ["Düşük şiddet", "Orta-düşük şiddet", "Orta-yüksek şiddet", "Yüksek şiddet"]
-colors = {"Düşük şiddet": "tab:blue", "Orta-düşük şiddet": "tab:orange",
-          "Orta-yüksek şiddet": "tab:green", "Yüksek şiddet": "tab:red"}
+severity_order = BURNED_LABELS
+colors = dict(zip(severity_order, ["tab:blue", "tab:orange", "tab:green", "tab:red"]))
 
 TAU_BOUNDS = (0.15, 50)
 BOUND_TOLERANCE = 0.05
@@ -117,5 +120,6 @@ ax.set_ylabel("Ortalama NBR")
 ax.set_title("Toparlanma Eğrileri (yoğun zaman serisi)")
 ax.legend(fontsize=8)
 plt.tight_layout()
-plt.savefig("outputs/recovery_curves.png", dpi=150)
-print("\nKaydedildi: outputs/recovery_curves.png")
+out_png = FIGURES_DIR / "recovery_curves.png"
+plt.savefig(out_png, dpi=150)
+print(f"\nKaydedildi: {out_png}")

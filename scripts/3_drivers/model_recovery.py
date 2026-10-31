@@ -1,15 +1,18 @@
+"""2026 NBR düzeyinin koşullardan tahmini: doğrusal regresyon ve Random Forest;
+naif rastgele piksel ayrımı ile tamponlu mekansal blok ayrımının karşılaştırması."""
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score, root_mean_squared_error
+from wildfire.config import RECOVERY_DATASET
 
 BLOCK_SIZE = 500  # metre
 TEST_FRACTION = 0.2
 SEED = 42
 
-data = np.load("outputs/recovery_dataset.npz")
+data = np.load(RECOVERY_DATASET)
 feature_cols = ["baseline_vigor", "dnbr_value", "elevation", "slope_deg", "ns_gradient"]
 feature_names_tr = ["yangın öncesi NBR", "dNBR (şiddet)", "yükseklik", "eğim (derece)", "kuzey-güney eğim"]
 

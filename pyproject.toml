@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wildfire-recovery"
+version = "0.1.0"
+description = "Sentinel-2 ile Manavgat 2021 yangını sonrası bitki örtüsü toparlanması ve Het göstergesi"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Hakan Efe Tüysüz" }]
+requires-python = ">=3.10"
+dependencies = [
+    # Veri erişimi (Microsoft Planetary Computer STAC API)
+    "pystac-client>=0.7",
+    "planetary-computer>=1.0",
+    # Coğrafi raster işleme
+    "rasterio>=1.3",
+    "rioxarray>=0.15",
+    "xarray>=2023.1",
+    "pyproj>=3.5",
+    # Sayısal hesaplama ve modelleme
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scipy>=1.10",
+    "scikit-learn>=1.4",   # root_mean_squared_error için >=1.4 gerekir
+    # Görselleştirme
+    "matplotlib>=3.7",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

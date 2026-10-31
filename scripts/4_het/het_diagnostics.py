@@ -1,9 +1,12 @@
+"""Het varyantları (Het-z / Het-σ / Het-P), kantil kalibrasyonu, yayılım eşitliği,
+varyogram ve geride kalan yamaların analizi."""
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import ndimage
 from sklearn.metrics import r2_score
-from het_core import load_dataset, condition_matrix, SpatialFolds, oof_predict, percentile_from_quantiles
+from wildfire.config import FIGURES_DIR, TABLES_DIR
+from wildfire.het import load_dataset, condition_matrix, SpatialFolds, oof_predict, percentile_from_quantiles
 
 d = load_dataset()
 x_c, y_c = d["x_coord"], d["y_coord"]
@@ -58,7 +61,7 @@ for name, v in variants:
 het_tab = pd.DataFrame(rows)
 print("\n=== Koşul gruplarına göre yayılım eşitliği (1,00 ideal) ===")
 print(het_tab.to_string(index=False))
-het_tab.to_csv("outputs/het_diagnostics.csv", index=False)
+het_tab.to_csv(TABLES_DIR / "het_diagnostics.csv", index=False)
 
 print("\n4/4 mekansal yapı (varyogram) ve yamalar...")
 CELL = 10
@@ -119,7 +122,7 @@ plt.ylabel("Yarı-varyans / varyans")
 plt.title("Het varyantlarının mekansal yapısı")
 plt.legend()
 plt.tight_layout()
-plt.savefig("outputs/het_variogram.png", dpi=150)
+plt.savefig(FIGURES_DIR / "het_variogram.png", dpi=150)
 
 
 def patch_stats(v, thr=-1.0):
@@ -141,4 +144,4 @@ for label, v in [("gerçek", het_s), ("karıştırılmış (gürültü referans�
     print(f"  {label}: >=1 ha yama sayısı={len(big)}, >=5 ha={int((ha >= 5).sum())}, "
           f"toplam alan={big.sum():.0f} ha (geçerli alanın %{100*big.sum()/total:.2f}'i), "
           f"en büyük={ha.max() if len(ha) else 0:.1f} ha")
-print("\nKaydedildi: outputs/het_diagnostics.csv, outputs/het_variogram.png")
+print(f"\nKaydedildi: {TABLES_DIR / 'het_diagnostics.csv'}, {FIGURES_DIR / 'het_variogram.png'}")

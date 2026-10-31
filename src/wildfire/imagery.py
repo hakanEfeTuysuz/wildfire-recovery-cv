@@ -1,20 +1,25 @@
+"""Planetary Computer üzerinden Sentinel-2 / WorldCover / DEM erişimi, NBR ve maskeler."""
 import os
 os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "EMPTY_DIR"
 os.environ["CPL_VSIL_CURL_ALLOWED_EXTENSIONS"] = ".tif"
 
 import time
 from collections import defaultdict
+from dataclasses import dataclass
 
 import numpy as np
 import rioxarray
+import xarray as xr
 from rioxarray.merge import merge_arrays
 from pyproj import Transformer
 from rasterio.enums import Resampling
 import pystac_client
 import planetary_computer
 
+from wildfire.config import BBOX_4326, PRE_FIRE_DATE, POST_FIRE_DATE
+from wildfire.severity import classify_severity
+
 CATALOG_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
-BBOX_4326 = [30.95, 36.65, 31.75, 37.20]
 
 BAD_SCL_CLASSES = [0, 1, 2, 3, 6, 8, 9, 10, 11]
 FOREST_CLASSES = [10, 20]
@@ -28,18 +33,6 @@ BOA_ADD_OFFSET = -1000
 OFFSET_BASELINE = 4.0
 OFFSET_START_DATE = "2022-01-25"
 REFLECTANCE_BANDS = {"B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"}
-
-# Önbelleklenen ara çıktıların sürümü. Ön işleme mantığı değiştiğinde artırılır ki
-# eski (hatalı) önbellekler sessizce yeniden kullanılmasın.
-PIPELINE_VERSION = 2
-
-# USGS dNBR şiddet eşikleri (Key & Benson, 2006)
-SEVERITY_BOUNDS = [-0.25, -0.1, 0.1, 0.27, 0.44, 0.66]
-SEVERITY_LABELS = [
-    "Yüksek yeniden büyüme", "Düşük yeniden büyüme", "Yanmamış",
-    "Düşük şiddet", "Orta-düşük şiddet", "Orta-yüksek şiddet", "Yüksek şiddet",
-]
-BURNED_CLASSES = [3, 4, 5, 6]  # sadece gerçekten yanmış sınıflar
 
 _catalog = None
 
@@ -82,13 +75,6 @@ def boa_offset(item):
             pass
     # Özellik yoksa tarihe göre karar ver
     return BOA_ADD_OFFSET if str(item.datetime.date()) >= OFFSET_START_DATE else 0
-
-
-def classify_severity(dnbr_values):
-    """dNBR dizisini USGS sınıflarına ayırır; NaN pikseller -1 olur."""
-    dnbr_values = np.asarray(dnbr_values)
-    cls = np.digitize(dnbr_values, SEVERITY_BOUNDS)
-    return np.where(np.isnan(dnbr_values), -1, cls)
 
 
 def get_sentinel2_items(date_str, bbox=BBOX_4326):
@@ -221,3 +207,38 @@ def get_terrain_features(target_grid, bbox=BBOX_4326):
     # dz_dy: kuzeye doğru yükseliş (m/m). Pozitif = arazi kuzeye doğru yükseliyor,
     # yani yamaç GÜNEYE bakıyor; negatif = yamaç kuzeye bakıyor.
     return elevation, slope_deg, dz_dy
+
+
+@dataclass
+class FireReference:
+    """Yangın öncesi/sonrası referans görüntüler ve bunlardan türetilenler.
+
+    Tüm diziler yangın öncesi görüntünün ızgarasındadır (``nbr_pre``).
+    """
+    nbr_pre: xr.DataArray
+    mask_pre: xr.DataArray
+    nbr_post: xr.DataArray
+    mask_post: xr.DataArray
+    forest_mask: xr.DataArray
+    valid: xr.DataArray            # öncesi & sonrası geçerli & orman/maki
+    dnbr: xr.DataArray             # öncesi - sonrası, geçersiz pikseller NaN
+    severity_class: np.ndarray     # USGS sınıfı, geçersiz pikseller -1
+
+
+def load_fire_reference(pre_date=PRE_FIRE_DATE, post_date=POST_FIRE_DATE):
+    """Yangın öncesi ve hemen sonrası görüntüleri indirir, dNBR ve şiddet sınıfını hesaplar."""
+    print(f"--- Yangın öncesi ({pre_date}) ---")
+    nbr_pre, mask_pre = compute_nbr_and_mask(get_sentinel2_items(pre_date))
+    forest_mask = get_forest_mask(target_grid=nbr_pre)
+
+    print(f"--- Yangın hemen sonrası ({post_date}) ---")
+    nbr_post, mask_post = compute_nbr_and_mask(get_sentinel2_items(post_date))
+    nbr_post, mask_post = align_to_reference(nbr_post, mask_post, nbr_pre)
+
+    valid = mask_pre & mask_post & forest_mask
+    dnbr = (nbr_pre - nbr_post).where(valid)
+    return FireReference(
+        nbr_pre=nbr_pre, mask_pre=mask_pre, nbr_post=nbr_post, mask_post=mask_post,
+        forest_mask=forest_mask, valid=valid, dnbr=dnbr,
+        severity_class=classify_severity(dnbr.values),
+    )

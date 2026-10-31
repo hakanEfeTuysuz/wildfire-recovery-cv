@@ -1,29 +1,20 @@
-import os
+"""Toparlanma sürücüleri (yangın öncesi NBR, şiddet, arazi) ve model/Het betiklerinin
+kullandığı piksel veri setinin (data/interim/recovery_dataset.npz) üretimi."""
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import pearsonr
-from common import (
-    get_sentinel2_items, compute_nbr_and_mask, get_forest_mask, find_best_august_date,
-    get_terrain_features, align_to_reference, classify_severity, SEVERITY_LABELS, BURNED_CLASSES,
+from wildfire.config import FIGURES_DIR, RECOVERY_DATASET, TARGET_YEAR
+from wildfire.imagery import (
+    compute_nbr_and_mask, find_best_august_date, get_terrain_features, align_to_reference, load_fire_reference,
 )
+from wildfire.severity import SEVERITY_LABELS, BURNED_CLASSES
 
-TARGET_YEAR = 2026
-
-print("--- Yangın öncesi (baseline / arazi kalitesi vekili) ---")
-pre_items = get_sentinel2_items("2021-07-20")
-nbr_pre, mask_pre = compute_nbr_and_mask(pre_items)
-forest_mask = get_forest_mask(target_grid=nbr_pre)
-
-print("--- Yangın hemen sonrası ---")
-post_items = get_sentinel2_items("2021-08-14")
-nbr_post, mask_post = compute_nbr_and_mask(post_items)
-nbr_post, mask_post = align_to_reference(nbr_post, mask_post, nbr_pre)
-
-valid_2021 = mask_pre & mask_post & forest_mask
-dnbr_2021 = (nbr_pre - nbr_post).where(valid_2021)
+ref = load_fire_reference()
+nbr_pre, nbr_post, forest_mask = ref.nbr_pre, ref.nbr_post, ref.forest_mask
+valid_2021, dnbr_2021 = ref.valid, ref.dnbr
 
 severity_labels = SEVERITY_LABELS
-severity_class = classify_severity(dnbr_2021.values)
+severity_class = ref.severity_class
 burned_indices = BURNED_CLASSES
 
 print(f"--- En güncel yıl ({TARGET_YEAR} Ağustos) ---")
@@ -60,13 +51,13 @@ for ax, idx in zip(axes.flat, burned_indices):
     ax.set_ylabel("Toparlanma miktarı (2026 − sonrası)")
 
 plt.tight_layout()
-os.makedirs("outputs", exist_ok=True)
-plt.savefig("outputs/recovery_vs_baseline_vigor.png", dpi=150)
+out_png = FIGURES_DIR / "recovery_vs_baseline_vigor.png"
+plt.savefig(out_png, dpi=150)
 
 print("\nSınıf içi korelasyon (yangın öncesi NBR vs. toparlanma miktarı):")
 for label, r, p, n in results:
     print(f"  {label:25s}: r={r:.3f}  p={p:.4f}  n={n}")
-print("\nKaydedildi: outputs/recovery_vs_baseline_vigor.png")
+print(f"\nKaydedildi: {out_png}")
 
 print("\nYangın öncesi NBR vs. 2026 NBR (mutlak seviye) korelasyonu:")
 for idx in burned_indices:
@@ -95,7 +86,7 @@ print(f"Terrain temizliği sonrası geçerli piksel: {int(final_valid.sum())} / 
 xx, yy = np.meshgrid(nbr_pre.x.values, nbr_pre.y.values)
 
 np.savez(
-    "outputs/recovery_dataset.npz",
+    RECOVERY_DATASET,
     baseline_vigor=baseline_vigor[final_valid],
     dnbr_value=dnbr_2021.values[final_valid],
     severity_class=severity_class[final_valid],
@@ -107,4 +98,4 @@ np.savez(
     y_coord=yy[final_valid],
     nbr_2026_date=np.array(str(best_date)),
 )
-print("Kaydedildi: outputs/recovery_dataset.npz (model için, koordinatlar dahil)")
+print(f"Kaydedildi: {RECOVERY_DATASET} (model için, koordinatlar dahil)")

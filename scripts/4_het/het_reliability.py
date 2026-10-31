@@ -1,14 +1,17 @@
+"""Test-tekrar test güvenilirliği: aynı yazın farklı tarihlerinde Het'in tekrarlanabilirliği.
+Ek tarihleri indirip data/interim altında önbelleğe alır (het_scales.py de kullanır)."""
 import os
 import numpy as np
 import pandas as pd
 import xarray as xr
 from itertools import combinations
-from common import get_sentinel2_items, compute_nbr_and_mask, PIPELINE_VERSION
-from het_core import load_dataset, condition_matrix, SpatialFolds, oof_predict
+from wildfire.config import TABLES_DIR, nbr_cache_path
+from wildfire.imagery import get_sentinel2_items, compute_nbr_and_mask
+from wildfire.het import load_dataset, condition_matrix, SpatialFolds, oof_predict, EXTRA_DATES, main_date
 
-DATES = ["2026-07-24", "2026-08-03"]   # npz'deki ana tarih (ör. 2026-08-20) ile birlikte 3 tarih
+DATES = EXTRA_DATES   # npz'deki ana tarih (ör. 2026-08-20) ile birlikte 3 tarih
 d = load_dataset()
-MAIN_DATE = str(d["nbr_2026_date"]) if "nbr_2026_date" in d else "2026-08-20"
+MAIN_DATE = main_date(d)
 x_c, y_c = d["x_coord"], d["y_coord"]
 X = condition_matrix(d)
 dnbr = d["dnbr_value"].astype("float64")
@@ -18,7 +21,7 @@ series = {MAIN_DATE: d["nbr_2026"].astype("float64")}
 xs, ys = xr.DataArray(x_c, dims="p"), xr.DataArray(y_c, dims="p")
 
 for date in DATES:
-    cache = f"outputs/nbr_cache_v{PIPELINE_VERSION}_{date}.npy"
+    cache = nbr_cache_path(date)
     if os.path.exists(cache):
         series[date] = np.load(cache).astype("float64")
         print(f"{date}: önbellekten okundu")
@@ -71,5 +74,6 @@ for name, store in [("Het", het), ("Ham toparlanma", ham), ("2026 NBR düzeyi", 
 tab = pd.DataFrame(rows)
 print("\n=== Test-tekrar test güvenilirliği (aynı yaz, farklı tarihler) ===")
 print(tab.to_string(index=False))
-tab.to_csv("outputs/het_reliability.csv", index=False)
-print("\nKaydedildi: outputs/het_reliability.csv")
+out_csv = TABLES_DIR / "het_reliability.csv"
+tab.to_csv(out_csv, index=False)
+print(f"\nKaydedildi: {out_csv}")

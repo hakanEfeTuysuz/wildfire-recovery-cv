@@ -1,25 +1,25 @@
+"""Het artığının ölçek bileşenlerine (< 50 m, 50 m - 1 km, 1 - 3 km, > 3 km) ayrıştırılması
+ve her bileşenin tarihler arası tekrarlanabilirliği. Önce het_reliability.py çalıştırılmalı."""
 import numpy as np
 import pandas as pd
 from itertools import combinations
-from scipy import ndimage
-from common import PIPELINE_VERSION
-from het_core import load_dataset, condition_matrix, SpatialFolds, oof_predict
+from wildfire.config import TABLES_DIR, nbr_cache_path
+from wildfire.het import load_dataset, condition_matrix, SpatialFolds, oof_predict, smooth_grid, EXTRA_DATES, main_date
 
 CELL = 10
 DEEP_ITER = 200
 # Süzgeç pencereleri (hücre): 50 m, 1 km, 3 km
 W_FINE, W_MID, W_WIDE = 5, 101, 301
-EXTRA_DATES = ["2026-07-24", "2026-08-03"]   # het_reliability.py tarafından önbelleklenir
 
 d = load_dataset()
 x_c, y_c = d["x_coord"], d["y_coord"]
 X = condition_matrix(d)
-MAIN_DATE = str(d["nbr_2026_date"]) if "nbr_2026_date" in d else "2026-08-20"
+MAIN_DATE = main_date(d)
 DATES = [MAIN_DATE] + EXTRA_DATES
 
 series = {MAIN_DATE: d["nbr_2026"].astype("float64")}
 for dt in EXTRA_DATES:
-    series[dt] = np.load(f"outputs/nbr_cache_v{PIPELINE_VERSION}_{dt}.npy").astype("float64")
+    series[dt] = np.load(nbr_cache_path(dt)).astype("float64")   # het_reliability.py üretir
 
 valid = np.ones(len(x_c), dtype=bool)
 for v in series.values():
@@ -36,19 +36,12 @@ H = int(np.rint((ymax - y_c.min()) / CELL)) + 1
 W = int(np.rint((x_c.max() - xmin) / CELL)) + 1
 
 
-def smooth(g, size):
-    ok = np.isfinite(g)
-    num = ndimage.uniform_filter(np.where(ok, g, 0).astype("float32"), size=size, mode="constant")
-    den = ndimage.uniform_filter(ok.astype("float32"), size=size, mode="constant")
-    return np.where(den > 0.2, num / np.maximum(den, 1e-6), np.nan).astype("float32")
-
-
 def components(resid):
     g = np.full((H, W), np.nan, dtype="float32")
     g[iy, ix] = resid
-    s_fine = smooth(g, W_FINE)
-    s_mid = smooth(g, W_MID)
-    s_wide = smooth(g, W_WIDE)
+    s_fine = smooth_grid(g, W_FINE)
+    s_mid = smooth_grid(g, W_MID)
+    s_wide = smooth_grid(g, W_WIDE)
     comps = {
         "< 50 m (piksel gürültüsü + alt-piksel)": (g - s_fine)[iy, ix],
         "50 m - 1 km (yerel)": (s_fine - s_mid)[iy, ix],
@@ -86,5 +79,5 @@ for n in names:
 tab = pd.DataFrame(rows)
 print("\n=== Het'in ölçek bileşenleri: pay ve tekrarlanabilirlik ===")
 print(tab.to_string(index=False))
-tab.to_csv("outputs/het_scales.csv", index=False)
+tab.to_csv(TABLES_DIR / "het_scales.csv", index=False)
 print("\n(Payların toplamı 1'e yakın olmalı; bileşenler birbiriyle az da olsa ilişkili olabilir.)")

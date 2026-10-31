@@ -1,9 +1,14 @@
+# Ortam
 venv/
+.env
 __pycache__/
 *.pyc
+*.egg-info/
+build/
+
+# Büyük / yeniden üretilebilir ara veriler
 data/raw/
-.env
+data/interim/
 *.tif
-outputs/recovery_dataset.npz
-outputs/nbr_cache_*.npy
-outputs/recovery_timeseries_dense_eski_*.csv
+*.npy
+*.npz

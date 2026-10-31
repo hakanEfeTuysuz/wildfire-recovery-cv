@@ -1,14 +1,16 @@
+"""dNBR GeoTIFF'ini USGS şiddet sınıflarına ayırır; sınıf alanları ve harita."""
 import numpy as np
 import rioxarray
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
-from common import classify_severity, SEVERITY_LABELS
+from wildfire.config import DNBR_TIF, FIGURES_DIR
+from wildfire.severity import classify_severity, SEVERITY_LABELS, SEVERITY_COLORS
 
-dnbr = rioxarray.open_rasterio("outputs/dnbr_manavgat_2021.tif", masked=True).squeeze()
+dnbr = rioxarray.open_rasterio(DNBR_TIF, masked=True).squeeze()
 values = dnbr.values
 
 labels = SEVERITY_LABELS
-colors = ["#0b6623", "#66bb6a", "#fff9c4", "#ffd54f", "#ff8a65", "#e53935", "#7b0000"]
+colors = SEVERITY_COLORS
 
 severity_class = classify_severity(values)  # -1 = orman dışı / maskeli
 
@@ -32,5 +34,6 @@ cbar = fig.colorbar(im, ticks=[i + 0.5 for i in range(-1, len(labels))])
 cbar.ax.set_yticklabels(["Orman dışı/maskeli"] + labels)
 ax.set_title("Yanık Şiddeti Sınıflandırması (sadece orman) — Manavgat 2021")
 ax.axis("off")
-plt.savefig("outputs/severity_classified.png", dpi=150, bbox_inches="tight")
-print("Kaydedildi: outputs/severity_classified.png")
+out_png = FIGURES_DIR / "severity_classified.png"
+plt.savefig(out_png, dpi=150, bbox_inches="tight")
+print(f"Kaydedildi: {out_png}")

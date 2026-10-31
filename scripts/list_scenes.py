@@ -1,10 +1,8 @@
-import pystac_client
-import planetary_computer
+"""Keşif: yangın bölgesinin çekirdeği için 2021 yazındaki az bulutlu Sentinel-2
+görüntülerini listeler (referans tarihleri seçmek için kullanıldı)."""
+from wildfire.imagery import get_catalog
 
-catalog = pystac_client.Client.open(
-    "https://planetarycomputer.microsoft.com/api/stac/v1",
-    modifier=planetary_computer.sign_inplace,
-)
+catalog = get_catalog()
 
 bbox = [31.30, 36.90, 31.55, 37.10]
 
